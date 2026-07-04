@@ -145,7 +145,7 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
-            <img src="/chapanda.png" alt="Auto Shift" />
+            <img src={`${import.meta.env.BASE_URL}chapanda.png`} alt="Auto Shift" />
           </div>
           <div>
             <strong>Auto Shift</strong>
