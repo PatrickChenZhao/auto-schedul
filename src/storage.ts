@@ -75,10 +75,11 @@ export const normalizeAppState = (value: unknown): AppState => {
       earlyAllowedEmployeeIds:
         maybeState.specialSettings?.earlyAllowedEmployeeIds?.map(String) ??
         employees.map((employee) => employee.id),
-      priorityMode:
-        maybeState.specialSettings?.priorityMode === "binding-first"
-          ? "binding-first"
-          : "balance-first",
+      priorityMode: ["balance-first", "binding-first", "work-day-first"].includes(
+        maybeState.specialSettings?.priorityMode ?? "",
+      )
+        ? maybeState.specialSettings?.priorityMode ?? "balance-first"
+        : "balance-first",
     },
     schedule,
   };

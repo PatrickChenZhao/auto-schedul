@@ -166,6 +166,7 @@ input[type="number"] {
 
 .page-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 22px;
@@ -216,6 +217,37 @@ input[type="number"] {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.schedule-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.schedule-option-picker {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.schedule-option-picker button {
+  min-height: 32px;
+  min-width: 68px;
+  border-radius: 6px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.schedule-option-picker button.active {
+  background: #16212f;
+  color: #fff;
 }
 
 .day-button {
@@ -375,6 +407,16 @@ th {
   color: #263345;
 }
 
+.manual-schedule-button {
+  border: 1px solid #9db1c8;
+  background: #fff;
+  color: #263345;
+}
+
+.manual-schedule-button:hover {
+  border-color: #16212f;
+}
+
 .employee-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -389,12 +431,16 @@ th {
 
 .employee-item {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 120px 44px;
+  grid-template-columns: 44px minmax(220px, 1fr) 150px 120px 44px;
   align-items: center;
   gap: 10px;
   border: 1px solid #e4ebf4;
   border-radius: 8px;
   padding: 10px;
+}
+
+.employee-item.dragging {
+  opacity: 0.55;
 }
 
 .toggle-row {
@@ -419,6 +465,14 @@ th {
 .delete-button {
   background: #fdecec;
   color: #a82929;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .availability-list {
@@ -592,6 +646,42 @@ th {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 24px 80px rgba(8, 13, 24, 0.32);
+}
+
+.excel-export-modal {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 14px;
+  width: min(380px, 100%);
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(8, 13, 24, 0.32);
+}
+
+.excel-format-button {
+  min-height: 64px;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: #263345;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.excel-format-button:hover {
+  border-color: #16212f;
+  background: #eef3f8;
+}
+
+.excel-format-button.chapanda {
+  background: #16212f;
+  color: #fff;
+  border-color: #16212f;
+}
+
+.excel-format-button.chapanda:hover {
+  background: #223247;
 }
 
 .modal-header {

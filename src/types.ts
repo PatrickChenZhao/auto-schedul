@@ -15,7 +15,7 @@ export type ShiftType = (typeof shiftTypes)[number];
 export type EmployeeType = "full-time" | "casual";
 export type ShiftPreference = ShiftType | "any";
 export type CoworkerPreferenceType = "hard" | "soft";
-export type PriorityMode = "balance-first" | "binding-first";
+export type PriorityMode = "balance-first" | "binding-first" | "work-day-first";
 
 export type Employee = {
   id: string;
@@ -71,8 +71,15 @@ export type AppState = {
 };
 
 export type ScheduleWarning = {
-  type: "fallback" | "missing";
+  type: "fallback" | "missing" | "constraint";
   message: string;
+};
+
+export type ScheduleOption = {
+  id: string;
+  label: string;
+  schedule: WeeklySchedule;
+  warnings: ScheduleWarning[];
 };
 
 export type EmployeeStats = {

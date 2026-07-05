@@ -6,6 +6,7 @@
   Download,
   FileDown,
   FileUp,
+  GripVertical,
   LayoutDashboard,
   Plus,
   Settings,
@@ -26,8 +27,12 @@ import {
   shiftColors,
   shiftLabels,
 } from "./data";
-import { exportExcelSchedule, exportJsonBackup } from "./exporters";
-import { deleteManualShift, generateWeeklySchedule, upsertManualShift } from "./scheduler";
+import { ExcelExportMode, exportExcelSchedule, exportJsonBackup } from "./exporters";
+import {
+  deleteManualShift,
+  generateWeeklyScheduleOptions,
+  upsertManualShift,
+} from "./scheduler";
 import { calculateEmployeeStats } from "./stats";
 import { loadAppState, normalizeAppState, saveAppState } from "./storage";
 import {
@@ -36,6 +41,7 @@ import {
   Employee,
   EmployeePreference,
   ScheduleWarning,
+  ScheduleOption,
   ShiftAssignment,
   ShiftType,
   days,
@@ -81,6 +87,9 @@ function App() {
   const [page, setPage] = useState<Page>("schedule");
   const [selectedDay, setSelectedDay] = useState<Day>("Monday");
   const [warnings, setWarnings] = useState<ScheduleWarning[]>([]);
+  const [scheduleOptions, setScheduleOptions] = useState<ScheduleOption[]>([]);
+  const [selectedScheduleOptionId, setSelectedScheduleOptionId] = useState("");
+  const [excelExportModalOpen, setExcelExportModalOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<ShiftAssignment | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(
@@ -101,18 +110,42 @@ function App() {
   const stats = useMemo(() => calculateEmployeeStats(state), [state]);
 
   const updateState = (recipe: (current: AppState) => AppState) => {
+    setScheduleOptions([]);
+    setSelectedScheduleOptionId("");
     setState((current) => recipe(current));
   };
 
   const runAutoSchedule = () => {
-    const result = generateWeeklySchedule(state);
-    setState((current) => ({ ...current, schedule: result.schedule }));
+    const options = generateWeeklyScheduleOptions(state, 5);
+    const bestOption = options[0];
+    setScheduleOptions(options);
+    setSelectedScheduleOptionId(bestOption?.id ?? "");
+    setState((current) => ({
+      ...current,
+      schedule: bestOption?.schedule ?? createEmptySchedule(),
+    }));
     setWarnings(
-      result.warnings.length
-        ? result.warnings
+      bestOption?.warnings.length
+        ? bestOption.warnings
         : [{ type: "fallback", message: "Schedule generated successfully." }],
     );
     setPage("schedule");
+  };
+
+  const clearScheduleOptions = () => {
+    setScheduleOptions([]);
+    setSelectedScheduleOptionId("");
+  };
+
+  const selectScheduleOption = (option: ScheduleOption) => {
+    setSelectedScheduleOptionId(option.id);
+    setState((current) => ({ ...current, schedule: option.schedule }));
+    setWarnings(option.warnings);
+  };
+
+  const exportExcel = (mode: ExcelExportMode) => {
+    exportExcelSchedule(state, mode);
+    setExcelExportModalOpen(false);
   };
 
   const importJson = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -122,6 +155,7 @@ function App() {
     try {
       const text = await file.text();
       const imported = normalizeAppState(JSON.parse(text));
+      clearScheduleOptions();
       setState(imported);
       setWarnings([{ type: "fallback", message: "JSON backup imported successfully." }]);
       setPage("schedule");
@@ -200,14 +234,18 @@ function App() {
             selectedDay={selectedDay}
             setSelectedDay={setSelectedDay}
             stats={stats}
+            scheduleOptions={scheduleOptions}
+            selectedScheduleOptionId={selectedScheduleOptionId}
+            onSelectScheduleOption={selectScheduleOption}
             openAddModal={() => setAddModalOpen(true)}
             openEditModal={setEditAssignment}
-            startManualSchedule={() =>
+            startManualSchedule={() => {
+              clearScheduleOptions();
               setState((current) => ({
                 ...current,
                 schedule: createEmptySchedule(),
-              }))
-            }
+              }));
+            }}
           />
         )}
         {page === "employees" && (
@@ -245,10 +283,17 @@ function App() {
       </main>
 
       {page === "schedule" && (
-        <button className="floating-export" onClick={() => exportExcelSchedule(state)}>
+        <button className="floating-export" onClick={() => setExcelExportModalOpen(true)}>
           <Download size={18} />
           Export Excel
         </button>
+      )}
+
+      {excelExportModalOpen && (
+        <ExcelExportModal
+          onClose={() => setExcelExportModalOpen(false)}
+          onExport={exportExcel}
+        />
       )}
 
       {addModalOpen && (
@@ -257,6 +302,7 @@ function App() {
           day={selectedDay}
           onClose={() => setAddModalOpen(false)}
           onConfirm={(assignment) => {
+            clearScheduleOptions();
             setState((current) => ({
               ...current,
               schedule: upsertManualShift(current.schedule, selectedDay, assignment),
@@ -272,6 +318,7 @@ function App() {
           employeeName={getEmployeeName(state, editAssignment.employeeId)}
           onClose={() => setEditAssignment(null)}
           onChangeShift={(shiftType) => {
+            clearScheduleOptions();
             setState((current) => ({
               ...current,
               schedule: upsertManualShift(current.schedule, selectedDay, {
@@ -282,6 +329,7 @@ function App() {
             setEditAssignment(null);
           }}
           onDelete={() => {
+            clearScheduleOptions();
             setState((current) => ({
               ...current,
               schedule: deleteManualShift(
@@ -327,6 +375,9 @@ function SchedulePage({
   selectedDay,
   setSelectedDay,
   stats,
+  scheduleOptions,
+  selectedScheduleOptionId,
+  onSelectScheduleOption,
   openAddModal,
   openEditModal,
   startManualSchedule,
@@ -335,13 +386,23 @@ function SchedulePage({
   selectedDay: Day;
   setSelectedDay: (day: Day) => void;
   stats: ReturnType<typeof calculateEmployeeStats>;
+  scheduleOptions: ScheduleOption[];
+  selectedScheduleOptionId: string;
+  onSelectScheduleOption: (option: ScheduleOption) => void;
   openAddModal: () => void;
   openEditModal: (assignment: ShiftAssignment) => void;
   startManualSchedule: () => void;
 }) {
   const assignments = state.schedule[selectedDay].filter((assignment) =>
     state.employees.some((employee) => employee.id === assignment.employeeId),
-  );
+  ).sort((left, right) => {
+    const leftRank = shiftTypes.indexOf(left.shiftType);
+    const rightRank = shiftTypes.indexOf(right.shiftType);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return getEmployeeName(state, left.employeeId).localeCompare(
+      getEmployeeName(state, right.employeeId),
+    );
+  });
   const timelineStartMinutes = timeToMinutes(timelineStart);
   const timelineMinutes = timeToMinutes(timelineEnd) - timelineStartMinutes;
 
@@ -351,9 +412,32 @@ function SchedulePage({
         title="Schedule"
         subtitle="View one day at a time, edit shifts manually, and export the weekly result."
         actions={
-          <button className="secondary-button" onClick={startManualSchedule}>
-            手动排班
-          </button>
+          <div className="schedule-header-actions">
+            {scheduleOptions.length > 0 && (
+              <div className="schedule-option-picker" aria-label="Schedule options">
+                {scheduleOptions.map((option, index) => (
+                  <button
+                    key={option.id}
+                    className={selectedScheduleOptionId === option.id ? "active" : ""}
+                    onClick={() => onSelectScheduleOption(option)}
+                    title={
+                      option.warnings.length
+                        ? `${option.warnings.length} warning(s)`
+                        : "No warnings"
+                    }
+                  >
+                    {"\u65b9\u6848"} {index + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              className="secondary-button manual-schedule-button"
+              onClick={startManualSchedule}
+            >
+              手动排班
+            </button>
+          </div>
         }
       />
 
@@ -447,24 +531,24 @@ function StatsTable({ stats }: { stats: ReturnType<typeof calculateEmployeeStats
           <thead>
             <tr>
               <th>Employee</th>
-              <th>Total Hours</th>
-              <th>Count Hours</th>
-              <th>Work Days</th>
               <th>Early Count</th>
               <th>Mid Count</th>
               <th>Late Count</th>
+              <th>Work Days</th>
+              <th>Total Hours</th>
+              <th>Count Hours</th>
             </tr>
           </thead>
           <tbody>
             {stats.map((stat) => (
               <tr key={stat.employeeId}>
                 <td>{stat.employeeName}</td>
-                <td>{formatNumber(stat.totalHours)}</td>
-                <td>{formatNumber(stat.countHours)}</td>
-                <td>{stat.workDays}</td>
                 <td>{stat.earlyCount}</td>
                 <td>{stat.midCount}</td>
                 <td>{stat.lateCount}</td>
+                <td>{stat.workDays}</td>
+                <td>{formatNumber(stat.totalHours)}</td>
+                <td>{formatNumber(stat.countHours)}</td>
               </tr>
             ))}
           </tbody>
@@ -482,6 +566,7 @@ function EmployeesPage({
   updateState: (recipe: (current: AppState) => AppState) => void;
 }) {
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [draggedEmployeeId, setDraggedEmployeeId] = useState<string | null>(null);
 
   const addEmployee = (name: string, type: Employee["type"], enabled: boolean) => {
     const trimmedName = name.trim();
@@ -515,6 +600,25 @@ function EmployeesPage({
     setAddModalOpen(false);
   };
 
+  const moveEmployee = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+
+    updateState((current) => {
+      const sourceIndex = current.employees.findIndex((employee) => employee.id === sourceId);
+      const targetIndex = current.employees.findIndex((employee) => employee.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+
+      const employees = [...current.employees];
+      const [movedEmployee] = employees.splice(sourceIndex, 1);
+      employees.splice(targetIndex, 0, movedEmployee);
+
+      return {
+        ...current,
+        employees,
+      };
+    });
+  };
+
   return (
     <section>
       <PageHeader
@@ -531,7 +635,35 @@ function EmployeesPage({
 
         <div className="employee-list">
           {state.employees.map((employee) => (
-            <div className="employee-item" key={employee.id}>
+            <div
+              className={
+                draggedEmployeeId === employee.id
+                  ? "employee-item dragging"
+                  : "employee-item"
+              }
+              key={employee.id}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                const sourceId =
+                  event.dataTransfer.getData("text/plain") || draggedEmployeeId;
+                if (sourceId) moveEmployee(sourceId, employee.id);
+                setDraggedEmployeeId(null);
+              }}
+            >
+              <button
+                className="icon-button drag-handle"
+                aria-label={`Drag ${employee.name}`}
+                draggable
+                onDragStart={(event) => {
+                  setDraggedEmployeeId(employee.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", employee.id);
+                }}
+                onDragEnd={() => setDraggedEmployeeId(null)}
+              >
+                <GripVertical size={17} />
+              </button>
               <input
                 value={employee.name}
                 onChange={(event) =>
@@ -1064,6 +1196,22 @@ function SpecialSettingsPage({
           >
             Binding First
           </button>
+          <button
+            className={
+              state.specialSettings.priorityMode === "work-day-first" ? "active" : ""
+            }
+            onClick={() =>
+              updateState((current) => ({
+                ...current,
+                specialSettings: {
+                  ...current.specialSettings,
+                  priorityMode: "work-day-first",
+                },
+              }))
+            }
+          >
+            Work-day First
+          </button>
         </div>
 
         <div className="panel-title">
@@ -1312,13 +1460,13 @@ function WarningsModal({
   warnings: ScheduleWarning[];
   onClose: () => void;
 }) {
-  const hasProblem = warnings.some((warning) => warning.type === "missing");
+  const hasProblem = warnings.some((warning) => warning.type !== "fallback");
 
   return (
     <Modal title={hasProblem ? "Schedule Warnings" : "Schedule Message"} onClose={onClose}>
       <div className="warning-list">
         {warnings.map((warning, index) => (
-          <div className={warning.type === "missing" ? "warning-item danger" : "warning-item"} key={`${warning.message}-${index}`}>
+          <div className={warning.type !== "fallback" ? "warning-item danger" : "warning-item"} key={`${warning.message}-${index}`}>
             <AlertTriangle size={17} />
             <span>{warning.message}</span>
           </div>
@@ -1330,6 +1478,36 @@ function WarningsModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+function ExcelExportModal({
+  onClose,
+  onExport,
+}: {
+  onClose: () => void;
+  onExport: (mode: ExcelExportMode) => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="excel-export-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose Excel export format"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="excel-format-button" onClick={() => onExport("general")}>
+          General
+        </button>
+        <button
+          className="excel-format-button chapanda"
+          onClick={() => onExport("chapanda")}
+        >
+          Chapanda
+        </button>
+      </div>
+    </div>
   );
 }
 
