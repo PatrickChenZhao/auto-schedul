@@ -246,11 +246,11 @@ function App() {
         <div className="sidebar-tools">
           <button className="ghost-button" onClick={() => exportJsonBackup(state)}>
             <FileDown size={16} />
-            Export JSON
+            Export Data
           </button>
           <button className="ghost-button" onClick={() => fileInputRef.current?.click()}>
             <FileUp size={16} />
-            Import JSON
+            Import Data
           </button>
           <input
             ref={fileInputRef}
