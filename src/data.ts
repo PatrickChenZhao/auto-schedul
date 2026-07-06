@@ -5,6 +5,7 @@ import {
   Employee,
   EmployeePreference,
   ShiftDemand,
+  ShiftTemplateMap,
   ShiftType,
   WeeklySchedule,
   days,
@@ -88,24 +89,42 @@ export const defaultShiftDemand: ShiftDemand = days.reduce((demand, day) => {
   return demand;
 }, {} as ShiftDemand);
 
+export const defaultShiftTemplates: ShiftTemplateMap = days.reduce((templates, day) => {
+  const isLongWeekendDay = day === "Friday" || day === "Saturday" || day === "Sunday";
+  templates[day] = {
+    early: { start: "09:45", end: isLongWeekendDay ? "18:45" : "19:45" },
+    mid: { start: "11:00", end: isLongWeekendDay ? "20:00" : "21:00" },
+    late: { start: "13:00", end: "23:00" },
+  };
+  return templates;
+}, {} as ShiftTemplateMap);
+
+export const createDefaultShiftTemplates = (): ShiftTemplateMap =>
+  days.reduce((templates, day) => {
+    templates[day] = {
+      early: { ...defaultShiftTemplates[day].early },
+      mid: { ...defaultShiftTemplates[day].mid },
+      late: { ...defaultShiftTemplates[day].late },
+    };
+    return templates;
+  }, {} as ShiftTemplateMap);
+
 export const createDefaultState = (): AppState => ({
   employees: defaultEmployees,
   availability: createDefaultAvailability(defaultEmployees),
   preferences: createDefaultPreferences(defaultEmployees),
   shiftDemand: defaultShiftDemand,
+  shiftTemplates: createDefaultShiftTemplates(),
   specialSettings: {
     earlyAllowedEmployeeIds: defaultEmployees.map((employee) => employee.id),
     priorityMode: "balance-first",
+    shiftTypeCapEnabled: true,
   },
   schedule: createEmptySchedule(),
 });
 
-export const getShiftTemplate = (day: Day, shiftType: ShiftType) => {
-  const isLongWeekendDay = day === "Friday" || day === "Saturday" || day === "Sunday";
-  const templates: Record<ShiftType, { start: string; end: string }> = {
-    early: { start: "09:45", end: isLongWeekendDay ? "18:45" : "19:45" },
-    mid: { start: "11:00", end: isLongWeekendDay ? "20:00" : "21:00" },
-    late: { start: "13:00", end: "23:00" },
-  };
-  return templates[shiftType];
-};
+export const getShiftTemplate = (
+  day: Day,
+  shiftType: ShiftType,
+  shiftTemplates: ShiftTemplateMap = defaultShiftTemplates,
+) => shiftTemplates[day]?.[shiftType] ?? defaultShiftTemplates[day][shiftType];

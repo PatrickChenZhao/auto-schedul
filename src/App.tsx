@@ -2,6 +2,8 @@
   AlertTriangle,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   FileDown,
@@ -9,6 +11,7 @@
   GripVertical,
   LayoutDashboard,
   Plus,
+  RotateCcw,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -21,8 +24,10 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   createEmptySchedule,
   createDefaultAvailability,
+  createDefaultShiftTemplates,
   defaultAvailabilityEntry,
   defaultPreference,
+  defaultShiftTemplates,
   getShiftTemplate,
   shiftColors,
   shiftLabels,
@@ -43,6 +48,7 @@ import {
   ScheduleWarning,
   ScheduleOption,
   ShiftAssignment,
+  ShiftTemplate,
   ShiftType,
   days,
   shiftTypes,
@@ -82,10 +88,39 @@ const getEmployeeName = (state: AppState, employeeId: string) =>
 
 const shiftDisplayName = (shiftType: ShiftType) => shiftLabels[shiftType];
 
+const getWeekMonday = (date = new Date()) => {
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  return monday;
+};
+
+const addCalendarDays = (date: Date, daysToAdd: number) => {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + daysToAdd);
+  return nextDate;
+};
+
+const formatWeekDisplayDate = (date: Date) =>
+  `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+
+const formatShiftTemplate = (template: ShiftTemplate) =>
+  `${template.start}-${template.end}`;
+
+const defaultShiftTemplateTooltip = [
+  `周一到周四：早班 ${formatShiftTemplate(defaultShiftTemplates.Monday.early)}，中班 ${formatShiftTemplate(
+    defaultShiftTemplates.Monday.mid,
+  )}，晚班 ${formatShiftTemplate(defaultShiftTemplates.Monday.late)}。`,
+  `周五到周日：早班 ${formatShiftTemplate(defaultShiftTemplates.Friday.early)}，中班 ${formatShiftTemplate(
+    defaultShiftTemplates.Friday.mid,
+  )}，晚班 ${formatShiftTemplate(defaultShiftTemplates.Friday.late)}。`,
+].join("\n");
+
 function App() {
   const [state, setState] = useState<AppState>(() => loadAppState());
   const [page, setPage] = useState<Page>("schedule");
   const [selectedDay, setSelectedDay] = useState<Day>("Monday");
+  const [weekStartDate, setWeekStartDate] = useState<Date>(() => getWeekMonday());
   const [warnings, setWarnings] = useState<ScheduleWarning[]>([]);
   const [scheduleOptions, setScheduleOptions] = useState<ScheduleOption[]>([]);
   const [selectedScheduleOptionId, setSelectedScheduleOptionId] = useState("");
@@ -144,7 +179,7 @@ function App() {
   };
 
   const exportExcel = (mode: ExcelExportMode) => {
-    exportExcelSchedule(state, mode);
+    exportExcelSchedule(state, mode, weekStartDate);
     setExcelExportModalOpen(false);
   };
 
@@ -233,6 +268,13 @@ function App() {
             state={state}
             selectedDay={selectedDay}
             setSelectedDay={setSelectedDay}
+            weekStartDate={weekStartDate}
+            onPreviousWeek={() =>
+              setWeekStartDate((current) => addCalendarDays(current, -7))
+            }
+            onNextWeek={() =>
+              setWeekStartDate((current) => addCalendarDays(current, 7))
+            }
             stats={stats}
             scheduleOptions={scheduleOptions}
             selectedScheduleOptionId={selectedScheduleOptionId}
@@ -356,14 +398,14 @@ function PageHeader({
   actions,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   actions?: React.ReactNode;
 }) {
   return (
     <header className="page-header">
       <div>
         <h1>{title}</h1>
-        <p>{subtitle}</p>
+        {subtitle ? <p>{subtitle}</p> : null}
       </div>
       {actions}
     </header>
@@ -374,6 +416,9 @@ function SchedulePage({
   state,
   selectedDay,
   setSelectedDay,
+  weekStartDate,
+  onPreviousWeek,
+  onNextWeek,
   stats,
   scheduleOptions,
   selectedScheduleOptionId,
@@ -385,6 +430,9 @@ function SchedulePage({
   state: AppState;
   selectedDay: Day;
   setSelectedDay: (day: Day) => void;
+  weekStartDate: Date;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
   stats: ReturnType<typeof calculateEmployeeStats>;
   scheduleOptions: ScheduleOption[];
   selectedScheduleOptionId: string;
@@ -405,6 +453,7 @@ function SchedulePage({
   });
   const timelineStartMinutes = timeToMinutes(timelineStart);
   const timelineMinutes = timeToMinutes(timelineEnd) - timelineStartMinutes;
+  const weekEndDate = addCalendarDays(weekStartDate, 6);
 
   return (
     <section>
@@ -441,16 +490,46 @@ function SchedulePage({
         }
       />
 
-      <div className="day-switcher">
-        {days.map((day) => (
+      <div className="schedule-controls">
+        <div className="day-switcher">
+          {days.map((day) => (
+            <button
+              key={day}
+              className={selectedDay === day ? "day-button active" : "day-button"}
+              onClick={() => setSelectedDay(day)}
+            >
+              {day}
+            </button>
+          ))}
+        </div>
+
+        <div className="week-picker" aria-label="Week date range">
           <button
-            key={day}
-            className={selectedDay === day ? "day-button active" : "day-button"}
-            onClick={() => setSelectedDay(day)}
+            className="week-nav-button"
+            type="button"
+            onClick={onPreviousWeek}
+            aria-label="Previous week"
+            title="上一周"
           >
-            {day}
+            <ChevronLeft size={18} />
+            <span>上一周</span>
           </button>
-        ))}
+          <div className="week-range">
+            {formatWeekDisplayDate(weekStartDate)}
+            <span>-</span>
+            {formatWeekDisplayDate(weekEndDate)}
+          </div>
+          <button
+            className="week-nav-button"
+            type="button"
+            onClick={onNextWeek}
+            aria-label="Next week"
+            title="下一周"
+          >
+            <span>下一周</span>
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="panel schedule-panel">
@@ -468,7 +547,11 @@ function SchedulePage({
             <div className="empty-state">No shifts scheduled for {selectedDay}.</div>
           ) : (
             assignments.map((assignment) => {
-              const template = getShiftTemplate(selectedDay, assignment.shiftType);
+              const template = getShiftTemplate(
+                selectedDay,
+                assignment.shiftType,
+                state.shiftTemplates,
+              );
               const left =
                 ((timeToMinutes(template.start) - timelineStartMinutes) / timelineMinutes) *
                 100;
@@ -913,6 +996,7 @@ function PreferencesPage({
   const [coworkerId, setCoworkerId] = useState("");
   const [coworkerType, setCoworkerType] =
     useState<EmployeePreference["coworkers"][number]["type"]>("soft");
+  const [coworkerModalOpen, setCoworkerModalOpen] = useState(false);
   const coworkers = state.employees.filter((employee) => employee.id !== selectedEmployeeId);
 
   useEffect(() => {
@@ -1011,45 +1095,8 @@ function PreferencesPage({
 
         <div className="field-group">
           <label>Coworker Preference</label>
-          <div className="form-row">
-            <select
-              value={coworkerId}
-              onChange={(event) => setCoworkerId(event.target.value)}
-            >
-              <option value="">无</option>
-              {coworkers.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={coworkerType}
-              onChange={(event) =>
-                setCoworkerType(
-                  event.target.value as EmployeePreference["coworkers"][number]["type"],
-                )
-              }
-            >
-              <option value="hard">Hard Bind</option>
-              <option value="soft">Soft Preference</option>
-            </select>
-            <button
-              className="primary-button"
-              disabled={!coworkerId}
-              onClick={() => {
-                if (!coworkerId) return;
-                updatePreference({
-                  coworkers: [
-                    ...preference.coworkers.filter(
-                      (coworker) => coworker.coworkerId !== coworkerId,
-                    ),
-                    { coworkerId, type: coworkerType },
-                  ],
-                });
-                setCoworkerId("");
-              }}
-            >
+          <div className="coworker-toolbar">
+            <button className="primary-button" onClick={() => setCoworkerModalOpen(true)}>
               <Plus size={17} />
               Add
             </button>
@@ -1080,6 +1127,29 @@ function PreferencesPage({
           </div>
         </div>
       </div>
+      {coworkerModalOpen && (
+        <AddCoworkerPreferenceModal
+          coworkers={coworkers}
+          coworkerId={coworkerId}
+          coworkerType={coworkerType}
+          onChangeCoworkerId={setCoworkerId}
+          onChangeCoworkerType={setCoworkerType}
+          onClose={() => setCoworkerModalOpen(false)}
+          onConfirm={() => {
+            if (!coworkerId) return;
+            updatePreference({
+              coworkers: [
+                ...preference.coworkers.filter(
+                  (coworker) => coworker.coworkerId !== coworkerId,
+                ),
+                { coworkerId, type: coworkerType },
+              ],
+            });
+            setCoworkerId("");
+            setCoworkerModalOpen(false);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -1091,6 +1161,29 @@ function ShiftDemandPage({
   state: AppState;
   updateState: (recipe: (current: AppState) => AppState) => void;
 }) {
+  const [editingShiftTime, setEditingShiftTime] = useState<{
+    day: Day;
+    shiftType: ShiftType;
+  } | null>(null);
+
+  const updateShiftTemplate = (
+    day: Day,
+    shiftType: ShiftType,
+    template: ShiftTemplate,
+  ) => {
+    updateState((current) => ({
+      ...current,
+      shiftTemplates: {
+        ...current.shiftTemplates,
+        [day]: {
+          ...current.shiftTemplates[day],
+          [shiftType]: template,
+        },
+      },
+    }));
+    setEditingShiftTime(null);
+  };
+
   return (
     <section>
       <PageHeader
@@ -1114,24 +1207,37 @@ function ShiftDemandPage({
                   <td>{day}</td>
                   {shiftTypes.map((shiftType) => (
                     <td key={shiftType}>
-                      <input
-                        className="number-cell"
-                        type="number"
-                        min="0"
-                        value={state.shiftDemand[day][shiftType]}
-                        onChange={(event) =>
-                          updateState((current) => ({
-                            ...current,
-                            shiftDemand: {
-                              ...current.shiftDemand,
-                              [day]: {
-                                ...current.shiftDemand[day],
-                                [shiftType]: Number(event.target.value),
+                      <div className="demand-cell-control">
+                        <input
+                          className="number-cell"
+                          type="number"
+                          min="0"
+                          value={state.shiftDemand[day][shiftType]}
+                          onChange={(event) =>
+                            updateState((current) => ({
+                              ...current,
+                              shiftDemand: {
+                                ...current.shiftDemand,
+                                [day]: {
+                                  ...current.shiftDemand[day],
+                                  [shiftType]: Number(event.target.value),
+                                },
                               },
-                            },
-                          }))
-                        }
-                      />
+                            }))
+                          }
+                        />
+                        <button
+                          className="shift-time-button"
+                          type="button"
+                          onClick={() => setEditingShiftTime({ day, shiftType })}
+                          aria-label={`Set ${day} ${shiftLabels[shiftType]} time`}
+                          title={`${formatShiftTemplate(
+                            getShiftTemplate(day, shiftType, state.shiftTemplates),
+                          )}`}
+                        >
+                          <Settings size={16} />
+                        </button>
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -1140,7 +1246,106 @@ function ShiftDemandPage({
           </table>
         </div>
       </div>
+      <div className="demand-footer-actions">
+        <button
+          className="secondary-button reset-default-button tooltip-target"
+          type="button"
+          data-tooltip={defaultShiftTemplateTooltip}
+          onClick={() =>
+            updateState((current) => ({
+              ...current,
+              shiftTemplates: createDefaultShiftTemplates(),
+            }))
+          }
+        >
+          <RotateCcw size={17} />
+          恢复默认值
+        </button>
+      </div>
+      {editingShiftTime && (
+        <ShiftTimeModal
+          day={editingShiftTime.day}
+          shiftType={editingShiftTime.shiftType}
+          template={getShiftTemplate(
+            editingShiftTime.day,
+            editingShiftTime.shiftType,
+            state.shiftTemplates,
+          )}
+          onClose={() => setEditingShiftTime(null)}
+          onConfirm={(template) =>
+            updateShiftTemplate(
+              editingShiftTime.day,
+              editingShiftTime.shiftType,
+              template,
+            )
+          }
+        />
+      )}
     </section>
+  );
+}
+
+function ShiftTimeModal({
+  day,
+  shiftType,
+  template,
+  onClose,
+  onConfirm,
+}: {
+  day: Day;
+  shiftType: ShiftType;
+  template: ShiftTemplate;
+  onClose: () => void;
+  onConfirm: (template: ShiftTemplate) => void;
+}) {
+  const [start, setStart] = useState(template.start);
+  const [end, setEnd] = useState(template.end);
+  const isValidRange = timeToMinutes(start) < timeToMinutes(end);
+
+  return (
+    <Modal title={`${day} ${shiftLabels[shiftType]} 时间设置`} onClose={onClose}>
+      <div className="modal-form">
+        <div className="shift-time-summary">
+          当前默认参考：{formatShiftTemplate(defaultShiftTemplates[day][shiftType])}
+        </div>
+        <div className="two-column-form modal-time-grid">
+          <label>
+            Start
+            <input
+              type="time"
+              value={start}
+              onChange={(event) => setStart(event.target.value)}
+              onInput={(event) => setStart(event.currentTarget.value)}
+            />
+          </label>
+          <label>
+            End
+            <input
+              type="time"
+              value={end}
+              onChange={(event) => setEnd(event.target.value)}
+              onInput={(event) => setEnd(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+        {!isValidRange && (
+          <div className="inline-warning">结束时间必须晚于开始时间。</div>
+        )}
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={!isValidRange}
+            onClick={() => onConfirm({ start, end })}
+          >
+            <Check size={17} />
+            Confirm
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1155,19 +1360,17 @@ function SpecialSettingsPage({
 
   return (
     <section>
-      <PageHeader
-        title="Special Settings"
-        subtitle="Control who is allowed to receive Early shifts during auto scheduling."
-      />
+      <PageHeader title="Special Settings" />
       <div className="panel settings-panel">
-        <div className="panel-title inline-title">
+        <div className="special-section-title">
           <h2>Priorities</h2>
         </div>
         <div className="segmented-control priority-control">
           <button
-            className={
+            className={`tooltip-target ${
               state.specialSettings.priorityMode === "balance-first" ? "active" : ""
-            }
+            }`}
+            data-tooltip="优先让正式员工的班型和工时更平均。"
             onClick={() =>
               updateState((current) => ({
                 ...current,
@@ -1181,9 +1384,10 @@ function SpecialSettingsPage({
             Balance First
           </button>
           <button
-            className={
+            className={`tooltip-target ${
               state.specialSettings.priorityMode === "binding-first" ? "active" : ""
-            }
+            }`}
+            data-tooltip="优先满足员工之间的绑定关系。"
             onClick={() =>
               updateState((current) => ({
                 ...current,
@@ -1197,9 +1401,10 @@ function SpecialSettingsPage({
             Binding First
           </button>
           <button
-            className={
+            className={`tooltip-target ${
               state.specialSettings.priorityMode === "work-day-first" ? "active" : ""
-            }
+            }`}
+            data-tooltip="优先保证员工达到设置的最低工作天数，之后再考虑绑定关系、班型平衡和工时平衡。"
             onClick={() =>
               updateState((current) => ({
                 ...current,
@@ -1214,7 +1419,36 @@ function SpecialSettingsPage({
           </button>
         </div>
 
-        <div className="panel-title">
+        <div className="special-section-title">
+          <h2>Safety Switches</h2>
+        </div>
+        <div className="checkbox-list">
+          <label
+            className="checkbox-card tooltip-target"
+            data-tooltip={[
+              "开启：同一员工同一班型最多 3 次，自动排班和优化调整都会遵守。",
+              "关闭：取消这个保险限制，不再对超过 3 次做限制。",
+              "默认开启，保持之前行为。",
+            ].join("\n")}
+          >
+            <input
+              type="checkbox"
+              checked={state.specialSettings.shiftTypeCapEnabled}
+              onChange={(event) =>
+                updateState((current) => ({
+                  ...current,
+                  specialSettings: {
+                    ...current.specialSettings,
+                    shiftTypeCapEnabled: event.target.checked,
+                  },
+                }))
+              }
+            />
+            <span>班型上限保护</span>
+          </label>
+        </div>
+
+        <div className="special-section-title">
           <h2>Allowed Early Shift Employees</h2>
         </div>
         <div className="checkbox-list">
@@ -1282,6 +1516,68 @@ function SystemSettingsPage({
         </div>
       </div>
     </section>
+  );
+}
+
+function AddCoworkerPreferenceModal({
+  coworkers,
+  coworkerId,
+  coworkerType,
+  onChangeCoworkerId,
+  onChangeCoworkerType,
+  onClose,
+  onConfirm,
+}: {
+  coworkers: Employee[];
+  coworkerId: string;
+  coworkerType: EmployeePreference["coworkers"][number]["type"];
+  onChangeCoworkerId: (id: string) => void;
+  onChangeCoworkerType: (type: EmployeePreference["coworkers"][number]["type"]) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal title="Add Coworker Preference" onClose={onClose}>
+      <div className="modal-form">
+        <label>
+          Employee
+          <select
+            value={coworkerId}
+            onChange={(event) => onChangeCoworkerId(event.target.value)}
+          >
+            <option value="">无</option>
+            {coworkers.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Binding
+          <select
+            value={coworkerType}
+            onChange={(event) =>
+              onChangeCoworkerType(
+                event.target.value as EmployeePreference["coworkers"][number]["type"],
+              )
+            }
+          >
+            <option value="hard">Hard Bind</option>
+            <option value="soft">Soft Preference</option>
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="primary-button" disabled={!coworkerId} onClick={onConfirm}>
+            <Check size={17} />
+            Confirm
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

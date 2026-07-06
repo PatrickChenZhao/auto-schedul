@@ -1,11 +1,13 @@
 import { AppState, days, shiftTypes } from "./types";
 import {
   createDefaultAvailability,
+  createDefaultShiftTemplates,
   createDefaultState,
   defaultPreference,
 } from "./data";
 
 const STORAGE_KEY = "auto-shift-scheduler:app-state";
+const TIME_PATTERN = /^\d{2}:\d{2}$/;
 
 export const loadAppState = (): AppState => {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -43,6 +45,8 @@ export const normalizeAppState = (value: unknown): AppState => {
   const availability = { ...defaults.availability, ...maybeState.availability };
   const preferences = { ...defaults.preferences, ...maybeState.preferences };
   const shiftDemand = { ...defaults.shiftDemand, ...maybeState.shiftDemand };
+  const shiftTemplates = createDefaultShiftTemplates();
+  const maybeShiftTemplates = maybeState.shiftTemplates;
   const schedule = { ...defaults.schedule, ...maybeState.schedule };
 
   employees.forEach((employee) => {
@@ -63,6 +67,17 @@ export const normalizeAppState = (value: unknown): AppState => {
       shiftDemand[day][shiftType] = Number.isFinite(shiftDemand[day][shiftType])
         ? Number(shiftDemand[day][shiftType])
         : defaults.shiftDemand[day][shiftType];
+      const maybeTemplate = maybeShiftTemplates?.[day]?.[shiftType];
+      if (
+        maybeTemplate &&
+        TIME_PATTERN.test(String(maybeTemplate.start)) &&
+        TIME_PATTERN.test(String(maybeTemplate.end))
+      ) {
+        shiftTemplates[day][shiftType] = {
+          start: String(maybeTemplate.start),
+          end: String(maybeTemplate.end),
+        };
+      }
     });
   });
 
@@ -71,6 +86,7 @@ export const normalizeAppState = (value: unknown): AppState => {
     availability,
     preferences,
     shiftDemand,
+    shiftTemplates,
     specialSettings: {
       earlyAllowedEmployeeIds:
         maybeState.specialSettings?.earlyAllowedEmployeeIds?.map(String) ??
@@ -80,6 +96,7 @@ export const normalizeAppState = (value: unknown): AppState => {
       )
         ? maybeState.specialSettings?.priorityMode ?? "balance-first"
         : "balance-first",
+      shiftTypeCapEnabled: maybeState.specialSettings?.shiftTypeCapEnabled !== false,
     },
     schedule,
   };

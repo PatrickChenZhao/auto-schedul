@@ -140,13 +140,21 @@ const formatDate = (date: Date) => {
   return `${day}/${month}`;
 };
 
-const getNextMonday = () => {
+const formatFullDate = (date: Date) =>
+  `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+
+const formatFileDate = (date: Date) => {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+
+const getCurrentWeekMonday = () => {
   const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  const dayOfWeek = date.getDay();
-  const daysUntilMonday = ((8 - dayOfWeek) % 7) || 7;
-  date.setDate(date.getDate() + daysUntilMonday);
-  return date;
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  return monday;
 };
 
 const addDays = (date: Date, daysToAdd: number) => {
@@ -250,8 +258,8 @@ const buildScheduleSheet = (
   const sortedAssignments = [...state.schedule[day]]
     .filter((assignment) => employeeById.has(assignment.employeeId))
     .sort((first, second) => {
-      const firstTemplate = getShiftTemplate(day, first.shiftType);
-      const secondTemplate = getShiftTemplate(day, second.shiftType);
+      const firstTemplate = getShiftTemplate(day, first.shiftType, state.shiftTemplates);
+      const secondTemplate = getShiftTemplate(day, second.shiftType, state.shiftTemplates);
       return (
         timeToMinutes(firstTemplate.start) - timeToMinutes(secondTemplate.start) ||
         (employeeById.get(first.employeeId) ?? "").localeCompare(
@@ -268,7 +276,7 @@ const buildScheduleSheet = (
     const assignment = sortedAssignments[rowOffset];
     if (!assignment) continue;
 
-    const template = getShiftTemplate(day, assignment.shiftType);
+    const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
     setCell(worksheet, rowIndex, 0, employeeById.get(assignment.employeeId) ?? "", baseStyle);
     setCell(worksheet, rowIndex, 1, formatShiftTime(template.start, template.end), baseStyle);
     setCell(
@@ -323,25 +331,27 @@ const buildScheduleSheet = (
   return worksheet;
 };
 
-const buildGeneralWorkbook = (state: AppState) => {
+const buildGeneralWorkbook = (state: AppState, weekStartDate: Date) => {
   const employeeById = new Map(
     state.employees.map((employee) => [employee.id, employee.name]),
   );
   const workbook = XLSX.utils.book_new();
 
-  days.forEach((day) => {
+  days.forEach((day, index) => {
+    const date = addDays(weekStartDate, index);
     const rows = state.schedule[day]
       .filter((assignment) => employeeById.has(assignment.employeeId))
       .map((assignment) => {
-        const template = getShiftTemplate(day, assignment.shiftType);
+        const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
         return [
+          formatFullDate(date),
           employeeById.get(assignment.employeeId) ?? "Unknown",
           `${generalShiftLabels[assignment.shiftType]} ${template.start}-${template.end}`,
         ];
       });
 
-    const worksheet = XLSX.utils.aoa_to_sheet([["Employee", "Shift"], ...rows]);
-    worksheet["!cols"] = [{ wch: 18 }, { wch: 24 }];
+    const worksheet = XLSX.utils.aoa_to_sheet([["Date", "Employee", "Shift"], ...rows]);
+    worksheet["!cols"] = [{ wch: 14 }, { wch: 18 }, { wch: 24 }];
     XLSX.utils.book_append_sheet(workbook, worksheet, day);
   });
 
@@ -364,14 +374,13 @@ const buildGeneralWorkbook = (state: AppState) => {
   return workbook;
 };
 
-const buildChapandaWorkbook = (state: AppState) => {
+const buildChapandaWorkbook = (state: AppState, weekStartDate: Date) => {
   const workbook = XLSX.utils.book_new();
-  const nextMonday = getNextMonday();
 
   days.forEach((day, index) => {
     XLSX.utils.book_append_sheet(
       workbook,
-      buildScheduleSheet(state, day, addDays(nextMonday, index)),
+      buildScheduleSheet(state, day, addDays(weekStartDate, index)),
       daySheetNames[day],
     );
   });
@@ -389,8 +398,16 @@ export const exportJsonBackup = (state: AppState) => {
 export const exportExcelSchedule = (
   state: AppState,
   mode: ExcelExportMode = "chapanda",
+  weekStartDate: Date = getCurrentWeekMonday(),
 ) => {
   const workbook =
-    mode === "general" ? buildGeneralWorkbook(state) : buildChapandaWorkbook(state);
-  XLSX.writeFile(workbook, "weekly_schedule.xlsx", { bookType: "xlsx" });
+    mode === "general"
+      ? buildGeneralWorkbook(state, weekStartDate)
+      : buildChapandaWorkbook(state, weekStartDate);
+  const weekEndDate = addDays(weekStartDate, 6);
+  XLSX.writeFile(
+    workbook,
+    `weekly_schedule_${formatFileDate(weekStartDate)}_to_${formatFileDate(weekEndDate)}.xlsx`,
+    { bookType: "xlsx" },
+  );
 };

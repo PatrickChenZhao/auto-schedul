@@ -20,7 +20,7 @@ export const calculateEmployeeStats = (state: AppState): EmployeeStats[] => {
     state.schedule[day].forEach((assignment) => {
       const stat = statByEmployee.get(assignment.employeeId);
       if (!stat) return;
-      const template = getShiftTemplate(day, assignment.shiftType);
+      const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
       stat.totalHours += getHoursBetween(template.start, template.end);
       stat.workDays += 1;
       if (assignment.shiftType === "early") stat.earlyCount += 1;

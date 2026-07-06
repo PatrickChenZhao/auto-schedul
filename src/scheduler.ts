@@ -50,6 +50,9 @@ const rebalanceDays: Day[] = [
 
 const maxSameShiftTypePerWeek = 3;
 
+const isShiftTypeCapEnabled = (state: AppState) =>
+  state.specialSettings.shiftTypeCapEnabled !== false;
+
 const isAvailableForShift = (
   state: AppState,
   employeeId: string,
@@ -58,7 +61,7 @@ const isAvailableForShift = (
 ) => {
   const availability = state.availability[employeeId]?.[day];
   if (!availability?.available) return false;
-  const shift = getShiftTemplate(day, shiftType);
+  const shift = getShiftTemplate(day, shiftType, state.shiftTemplates);
   return (
     timeToMinutes(availability.start) <= timeToMinutes(shift.start) &&
     timeToMinutes(availability.end) >= timeToMinutes(shift.end)
@@ -119,8 +122,9 @@ const canAssignEmployee = (
     !alreadyScheduled(context.schedule, employee.id, day) &&
     (shiftType !== "early" || earlyAllowed.has(employee.id)) &&
     (shiftType !== "late" || !preference?.refuseLateShift) &&
-    countShiftTypeAssignments(context.schedule, employee.id, shiftType) <
-      maxSameShiftTypePerWeek &&
+    (!isShiftTypeCapEnabled(context.state) ||
+      countShiftTypeAssignments(context.schedule, employee.id, shiftType) <
+        maxSameShiftTypePerWeek) &&
     (context.counts[employee.id] ?? 0) < getMaxDays(context.state, employee)
   );
 };
@@ -268,7 +272,7 @@ const addAssignment = (
   context.schedule[day].push({ employeeId: employee.id, shiftType });
   context.assignmentStep += 1;
   context.counts[employee.id] = (context.counts[employee.id] ?? 0) + 1;
-  const shiftTemplate = getShiftTemplate(day, shiftType);
+  const shiftTemplate = getShiftTemplate(day, shiftType, context.state.shiftTemplates);
   context.hours[employee.id] =
     (context.hours[employee.id] ?? 0) +
     getHoursBetween(shiftTemplate.start, shiftTemplate.end);
@@ -367,6 +371,7 @@ const hasShiftTypeCapViolation = (
   state: AppState,
   schedule: WeeklySchedule,
 ) =>
+  isShiftTypeCapEnabled(state) &&
   state.employees.some((employee) => {
     const counts = getEmployeeShiftCounts(schedule, employee.id);
     return shiftTypes.some(
@@ -672,7 +677,11 @@ const recalculateContextMetrics = (context: EngineContext) => {
 
   days.forEach((day) => {
     context.schedule[day].forEach((assignment) => {
-      const shiftTemplate = getShiftTemplate(day, assignment.shiftType);
+      const shiftTemplate = getShiftTemplate(
+        day,
+        assignment.shiftType,
+        context.state.shiftTemplates,
+      );
       context.counts[assignment.employeeId] =
         (context.counts[assignment.employeeId] ?? 0) + 1;
       context.hours[assignment.employeeId] =
@@ -778,8 +787,8 @@ const scoreSchedule = (state: AppState, schedule: WeeklySchedule, warnings: Sche
       assignmentHours[assignment.employeeId] =
         (assignmentHours[assignment.employeeId] ?? 0) +
         getHoursBetween(
-          getShiftTemplate(day, assignment.shiftType).start,
-          getShiftTemplate(day, assignment.shiftType).end,
+          getShiftTemplate(day, assignment.shiftType, state.shiftTemplates).start,
+          getShiftTemplate(day, assignment.shiftType, state.shiftTemplates).end,
         );
 
       if (
@@ -817,18 +826,20 @@ const scoreSchedule = (state: AppState, schedule: WeeklySchedule, warnings: Sche
     const minDays = state.preferences[employee.id]?.minDays ?? 0;
     return sum + Math.max(0, minDays - (assignmentCounts[employee.id] ?? 0));
   }, 0);
-  const shiftTypeCapPenalty = enabledEmployees.reduce((sum, employee) => {
-    const counts = getEmployeeShiftCounts(schedule, employee.id);
-    return (
-      sum +
-      shiftTypes.reduce(
-        (shiftSum, shiftType) =>
-          shiftSum +
-          Math.max(0, counts[shiftType] - maxSameShiftTypePerWeek),
-        0,
-      )
-    );
-  }, 0);
+  const shiftTypeCapPenalty = isShiftTypeCapEnabled(state)
+    ? enabledEmployees.reduce((sum, employee) => {
+        const counts = getEmployeeShiftCounts(schedule, employee.id);
+        return (
+          sum +
+          shiftTypes.reduce(
+            (shiftSum, shiftType) =>
+              shiftSum +
+              Math.max(0, counts[shiftType] - maxSameShiftTypePerWeek),
+            0,
+          )
+        );
+      }, 0)
+    : 0;
   const missingPenalty = warnings.filter((warning) => warning.type === "missing").length;
   const minDayPenaltyWeight =
     state.specialSettings.priorityMode === "work-day-first" ? 20000 : 300;

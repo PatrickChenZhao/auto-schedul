@@ -49,9 +49,17 @@ export type PreferenceMap = Record<string, EmployeePreference>;
 
 export type ShiftDemand = Record<Day, Record<ShiftType, number>>;
 
+export type ShiftTemplate = {
+  start: string;
+  end: string;
+};
+
+export type ShiftTemplateMap = Record<Day, Record<ShiftType, ShiftTemplate>>;
+
 export type SpecialSettings = {
   earlyAllowedEmployeeIds: string[];
   priorityMode: PriorityMode;
+  shiftTypeCapEnabled: boolean;
 };
 
 export type ShiftAssignment = {
@@ -66,6 +74,7 @@ export type AppState = {
   availability: AvailabilityMap;
   preferences: PreferenceMap;
   shiftDemand: ShiftDemand;
+  shiftTemplates: ShiftTemplateMap;
   specialSettings: SpecialSettings;
   schedule: WeeklySchedule;
 };
