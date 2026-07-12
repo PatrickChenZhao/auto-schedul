@@ -34,6 +34,7 @@ import {
 } from "./data";
 import { ExcelExportMode, exportExcelSchedule, exportJsonBackup } from "./exporters";
 import {
+  autoCompleteSchedule,
   deleteManualShift,
   generateWeeklyScheduleOptions,
   upsertManualShift,
@@ -116,6 +117,9 @@ const defaultShiftTemplateTooltip = [
   )}，晚班 ${formatShiftTemplate(defaultShiftTemplates.Friday.late)}。`,
 ].join("\n");
 
+const autoCompleteTooltipText =
+  "不修改已经录入的班次，自动补全其他剩余空班次";
+
 function App() {
   const [state, setState] = useState<AppState>(() => loadAppState());
   const [page, setPage] = useState<Page>("schedule");
@@ -176,6 +180,13 @@ function App() {
     setSelectedScheduleOptionId(option.id);
     setState((current) => ({ ...current, schedule: option.schedule }));
     setWarnings(option.warnings);
+  };
+
+  const autoCompleteCurrentSchedule = () => {
+    clearScheduleOptions();
+    const result = autoCompleteSchedule(state);
+    setState((current) => ({ ...current, schedule: result.schedule }));
+    setWarnings(result.warnings);
   };
 
   const exportExcel = (mode: ExcelExportMode) => {
@@ -281,6 +292,7 @@ function App() {
             onSelectScheduleOption={selectScheduleOption}
             openAddModal={() => setAddModalOpen(true)}
             openEditModal={setEditAssignment}
+            onAutoComplete={autoCompleteCurrentSchedule}
             startManualSchedule={() => {
               clearScheduleOptions();
               setState((current) => ({
@@ -425,6 +437,7 @@ function SchedulePage({
   onSelectScheduleOption,
   openAddModal,
   openEditModal,
+  onAutoComplete,
   startManualSchedule,
 }: {
   state: AppState;
@@ -439,8 +452,13 @@ function SchedulePage({
   onSelectScheduleOption: (option: ScheduleOption) => void;
   openAddModal: () => void;
   openEditModal: (assignment: ShiftAssignment) => void;
+  onAutoComplete: () => void;
   startManualSchedule: () => void;
 }) {
+  const [autoCompleteTooltipPosition, setAutoCompleteTooltipPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const assignments = state.schedule[selectedDay].filter((assignment) =>
     state.employees.some((employee) => employee.id === assignment.employeeId),
   ).sort((left, right) => {
@@ -454,6 +472,13 @@ function SchedulePage({
   const timelineStartMinutes = timeToMinutes(timelineStart);
   const timelineMinutes = timeToMinutes(timelineEnd) - timelineStartMinutes;
   const weekEndDate = addCalendarDays(weekStartDate, 6);
+  const showAutoCompleteTooltip = (target: HTMLButtonElement) => {
+    const rect = target.getBoundingClientRect();
+    setAutoCompleteTooltipPosition({
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - 380)),
+      top: rect.bottom + 8,
+    });
+  };
 
   return (
     <section>
@@ -592,11 +617,36 @@ function SchedulePage({
           )}
         </div>
 
-        <button className="add-shift-button" onClick={openAddModal}>
-          <Plus size={17} />
-          Add Employee Shift
-        </button>
+        <div className="schedule-panel-actions">
+          <button className="add-shift-button" onClick={openAddModal}>
+            <Plus size={17} />
+            Add Employee Shift
+          </button>
+          <button
+            className="auto-complete-button"
+            onClick={onAutoComplete}
+            onBlur={() => setAutoCompleteTooltipPosition(null)}
+            onFocus={(event) => showAutoCompleteTooltip(event.currentTarget)}
+            onMouseEnter={(event) => showAutoCompleteTooltip(event.currentTarget)}
+            onMouseLeave={() => setAutoCompleteTooltipPosition(null)}
+          >
+            <Sparkles size={17} />
+            一键自动补全
+          </button>
+        </div>
       </div>
+
+      {autoCompleteTooltipPosition && (
+        <div
+          className="floating-help-tooltip"
+          style={{
+            left: autoCompleteTooltipPosition.left,
+            top: autoCompleteTooltipPosition.top,
+          }}
+        >
+          {autoCompleteTooltipText}
+        </div>
+      )}
 
       <StatsTable stats={stats} />
     </section>

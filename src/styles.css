@@ -108,6 +108,7 @@ input[type="number"] {
 .nav-item,
 .day-button,
 .add-shift-button,
+.auto-complete-button,
 .floating-export,
 .delete-button {
   display: inline-flex;
@@ -420,10 +421,44 @@ input[type="number"] {
   filter: brightness(0.95);
 }
 
+.schedule-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px;
+}
+
 .add-shift-button {
-  margin: 16px;
   background: #eaf5f1;
   color: #12614c;
+}
+
+.auto-complete-button {
+  border: 1px solid #d7e1ee;
+  background: #fff;
+  color: #263345;
+}
+
+.auto-complete-button:hover {
+  border-color: #9db1c8;
+  background: #eef3f8;
+}
+
+.floating-help-tooltip {
+  position: fixed;
+  z-index: 90;
+  width: max-content;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #16212f;
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(8, 13, 24, 0.24);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: normal;
 }
 
 .table-wrap {

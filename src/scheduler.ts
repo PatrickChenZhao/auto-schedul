@@ -50,6 +50,22 @@ const rebalanceDays: Day[] = [
 
 const maxSameShiftTypePerWeek = 3;
 
+const autoCompleteDayLabels: Record<Day, string> = {
+  Monday: "星期一",
+  Tuesday: "星期二",
+  Wednesday: "星期三",
+  Thursday: "星期四",
+  Friday: "星期五",
+  Saturday: "星期六",
+  Sunday: "星期日",
+};
+
+const autoCompleteShiftLabels: Record<ShiftType, string> = {
+  early: "早班",
+  mid: "中班",
+  late: "晚班",
+};
+
 const isShiftTypeCapEnabled = (state: AppState) =>
   state.specialSettings.shiftTypeCapEnabled !== false;
 
@@ -288,7 +304,9 @@ const fillShift = (
   selectCandidate: CandidateSelector,
 ) => {
   const demand = Math.max(0, context.state.shiftDemand[day][shiftType] ?? 0);
-  let assigned = 0;
+  let assigned = context.schedule[day].filter(
+    (assignment) => assignment.shiftType === shiftType,
+  ).length;
 
   while (assigned < demand) {
     const candidates = getCandidates(context, day, shiftType);
@@ -729,18 +747,38 @@ const addMinimumDayWarnings = (context: EngineContext) => {
     });
 };
 
-const createContext = (state: AppState): EngineContext => ({
-  state,
-  schedule: createEmptySchedule(),
+const cloneSchedule = (schedule: WeeklySchedule) =>
+  days.reduce((copy, day) => {
+    copy[day] = schedule[day].map((assignment) => ({ ...assignment }));
+    return copy;
+  }, {} as WeeklySchedule);
+
+const createEmptyContextMetrics = (state: AppState) => ({
   counts: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
   hours: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
   shiftGroupCounts: {
     earlyMid: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
     late: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
   },
-  warnings: [],
-  assignmentStep: 0,
 });
+
+const createContext = (
+  state: AppState,
+  initialSchedule: WeeklySchedule = createEmptySchedule(),
+): EngineContext => {
+  const metrics = createEmptyContextMetrics(state);
+  const context: EngineContext = {
+    state,
+    schedule: cloneSchedule(initialSchedule),
+    counts: metrics.counts,
+    hours: metrics.hours,
+    shiftGroupCounts: metrics.shiftGroupCounts,
+    warnings: [],
+    assignmentStep: 0,
+  };
+  recalculateContextMetrics(context);
+  return context;
+};
 
 const sortSchedule = (schedule: WeeklySchedule) => {
   Object.values(schedule).forEach((assignments) =>
@@ -916,6 +954,36 @@ export const generateWeeklySchedule = (state: AppState) => {
   return {
     schedule: bestOption?.schedule ?? createEmptySchedule(),
     warnings: bestOption?.warnings ?? [],
+  };
+};
+
+export const autoCompleteSchedule = (state: AppState) => {
+  const context = createContext(state, state.schedule);
+
+  shiftTypes.forEach((shiftType) => {
+    days.forEach((day) => fillShift(context, day, shiftType, createVariantSelector(0)));
+  });
+
+  sortSchedule(context.schedule);
+
+  const missingWarnings = days.flatMap((day) =>
+    shiftTypes
+      .filter(
+        (shiftType) =>
+          context.schedule[day].filter((assignment) => assignment.shiftType === shiftType)
+            .length < Math.max(0, state.shiftDemand[day][shiftType] ?? 0),
+      )
+      .map(
+        (shiftType): ScheduleWarning => ({
+          type: "missing",
+          message: `${autoCompleteDayLabels[day]}-${autoCompleteShiftLabels[shiftType]}缺人-无法补全`,
+        }),
+      ),
+  );
+
+  return {
+    schedule: context.schedule,
+    warnings: missingWarnings,
   };
 };
 
