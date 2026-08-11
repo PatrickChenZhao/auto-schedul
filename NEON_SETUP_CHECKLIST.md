@@ -40,13 +40,14 @@
 - `MIGRATION_DATABASE_URL`：使用 owner/migration role 的连接串，只放本地受保护环境或专门的 migration CI；不放浏览器。
 - `DATABASE_URL`：Vercel Function 使用的 **pooled** 连接串。推荐创建权限受限的 runtime role，不使用 owner role。
 
-先用 owner role 在 development branch 执行生成的 migration；migration 文件是：
+development branch 当前已依次执行以下 migration：
 
 ```text
 drizzle/0000_cuddly_secret_warriors.sql
+drizzle/0001_lying_chronomancer.sql
 ```
 
-本仓库没有执行该 migration。应用前先在 Neon SQL Editor 再确认 branch 名称。
+`0001` 为 History 增加同周 `revision`、请求 `idempotency_key` 和唯一索引；已有记录按保存时间安全回填 Revision。Production 尚未执行任何上述 migration。
 
 迁移完成后，可为 runtime role（示例名 `auto_schedul_app`）授予最小权限：
 
@@ -121,3 +122,18 @@ Neon/Vercel managed integration 可自动向每个 Preview 注入 `DATABASE_URL`
 10. History 的“Download again”不新增 History。
 
 完成以上 Preview 验收后停止，另行制定 Production migration、回滚与切换窗口。
+
+## 8. 2026-08-12 Preview 验收结果
+
+- Google 登录与退出：通过。
+- 首次浏览器配置导入及自动保存：通过。
+- 新无痕窗口登录后直接从 Neon 加载配置与 History：通过。
+- 自动排班但不导出时不创建 History：通过。
+- General 正式导出创建 Revision 1：通过。
+- Chapanda 正式导出创建 Revision 2：通过。
+- 两版均为 23 assignments、5 名员工、224 小时，且 snapshot 完整：通过。
+- History `Download again` 不创建新 Revision：通过。
+- 修改当前员工名称不影响旧 History snapshot：通过。
+- Production migration / Production deployment：未执行。
+
+Production 前仍需单独确认 JWT issuer/audience、配置并发冲突策略、备份/回滚窗口及 Production 环境变量隔离。

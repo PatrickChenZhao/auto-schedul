@@ -1,11 +1,11 @@
 # Auto Shift Scheduler 后端、数据库、认证与 History 实施方案
 
-> 2026-08-10 开发实现说明：首个非生产代码切片已落地，生成的 Drizzle migration 尚未执行。为无损保留现有 `emp-*` ID 并避免改变算法输入，本切片把 employee canonical key 调整为 `(workspace_id uuid, id text)`，不再在首次导入时重映射 UUID；History assignment 同时保存该复合员工引用和姓名 snapshot。当前配置仍以同一个 transaction 保存，但 `shiftDemand`、`shiftTemplates`、`specialSettings` 保持完整 JSONB，以保证与现有 `AppSettings` 深度等价。实际操作清单见 `NEON_SETUP_CHECKLIST.md`。
+> 2026-08-12 Preview 实施状态：Neon `development` branch 已应用 `0000` 与 `0001` migration；Google 登录、首次 localStorage 导入、全量配置自动保存、跨浏览器云端加载、Excel 导出后创建 History、General/Chapanda 两种导出、History 再次下载不重复建档、不可变 snapshot、结构化统计及同周 Revision 已通过人工验收。当前仍未执行 Production migration，也未部署 Production。为无损保留现有 `emp-*` ID，employee canonical key 使用 `(workspace_id uuid, id text)`；History assignment 同时保存该员工引用和姓名 snapshot。实际操作清单见 `NEON_SETUP_CHECKLIST.md`。
 
 > 文档状态：分析方案，尚未实施
 > 审计日期：2026-08-10（Pacific/Auckland）
 > 审计对象：当前工作区（包含尚未提交的本地修改）
-> 本阶段限制：不执行数据库 migration、不创建或修改 Production 数据、不部署 Production、不大规模修改现有代码。
+> 当前停止线：允许继续验证 development/Preview；不创建或修改 Production 数据、不执行 Production migration、不部署 Production。
 
 ## 1. 结论摘要
 
