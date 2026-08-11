@@ -168,10 +168,23 @@ export const schedules = pgTable(
     settingsSnapshot: jsonb("settings_snapshot").$type<AppSettings>().notNull(),
     trigger: historyTrigger("history_trigger").notNull().default("excel-export"),
     format: exportFormat("export_format").notNull(),
+    revision: integer("revision").notNull().default(1),
+    idempotencyKey: uuid("idempotency_key").notNull().defaultRandom(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     createdBy: text("created_by").notNull(),
   },
-  (table) => [index("schedules_workspace_week_idx").on(table.workspaceId, table.weekStart, table.createdAt)],
+  (table) => [
+    index("schedules_workspace_week_idx").on(table.workspaceId, table.weekStart, table.createdAt),
+    uniqueIndex("schedules_workspace_week_revision_uidx").on(
+      table.workspaceId,
+      table.weekStart,
+      table.revision,
+    ),
+    uniqueIndex("schedules_workspace_idempotency_uidx").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+  ],
 );
 
 export const scheduleAssignments = pgTable(

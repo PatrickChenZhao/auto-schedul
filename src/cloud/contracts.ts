@@ -98,6 +98,7 @@ export const saveConfigurationRequestSchema = z.object({
 });
 
 export const createHistoryRequestSchema = z.object({
+  idempotencyKey: z.string().uuid(),
   weekStart: dateSchema,
   format: z.enum(["general", "chapanda"]),
   schedule: weeklyScheduleSchema,
@@ -129,6 +130,7 @@ export type HistoryListItem = {
   weekStart: string;
   weekEnd: string;
   format: "general" | "chapanda";
+  revision: number;
   createdAt: string;
   createdBy: string;
   assignmentCount: number;

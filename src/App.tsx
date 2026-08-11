@@ -1859,7 +1859,7 @@ function HistoryPage({
                   onClick={() => void openDetail(item.id)}
                 >
                   <strong>{item.weekStart} — {item.weekEnd}</strong>
-                  <span>{item.format} · {item.assignmentCount} shifts</span>
+                  <span>Revision {item.revision} · {item.format} · {item.assignmentCount} shifts</span>
                   <time>{new Date(item.createdAt).toLocaleString()}</time>
                 </button>
               ))}
@@ -1885,16 +1885,16 @@ function HistoryPage({
                 </div>
                 <div className="history-summary-grid">
                   <div className="history-summary-card">
+                    <span>Export</span>
+                    <strong>Revision {detail.revision}</strong>
+                  </div>
+                  <div className="history-summary-card">
                     <span>Format</span>
                     <strong>{detail.format === "general" ? "General" : "Chapanda"}</strong>
                   </div>
                   <div className="history-summary-card">
-                    <span>Shifts</span>
-                    <strong>{detail.assignmentCount}</strong>
-                  </div>
-                  <div className="history-summary-card">
-                    <span>Employees</span>
-                    <strong>{detailEmployeeCount}</strong>
+                    <span>Shifts / employees</span>
+                    <strong>{detail.assignmentCount} / {detailEmployeeCount}</strong>
                   </div>
                   <div className="history-summary-card">
                     <span>Total hours</span>

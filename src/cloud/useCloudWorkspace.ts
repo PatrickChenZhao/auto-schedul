@@ -209,6 +209,7 @@ export const useCloudWorkspace = ({
       await flushConfiguration();
       const result = await saveExportHistory({
         workspaceId: workspace.id,
+        idempotencyKey: crypto.randomUUID(),
         weekStart: formatLocalIsoDate(weekStart),
         format,
         schedule: snapshot.schedule,

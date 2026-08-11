@@ -46,6 +46,7 @@ const buildStats = (
 export const createHistoryFromExcelExport = async ({
   workspaceId,
   userId,
+  idempotencyKey,
   weekStart,
   format,
   schedule,
@@ -53,6 +54,7 @@ export const createHistoryFromExcelExport = async ({
 }: {
   workspaceId: string;
   userId: string;
+  idempotencyKey: string;
   weekStart: string;
   format: "general" | "chapanda";
   schedule: WeeklySchedule;
@@ -72,15 +74,28 @@ export const createHistoryFromExcelExport = async ({
   const scheduleSnapshot = { schedule, employeeNames };
   await neonSql.transaction([
     neonSql`
+      select pg_advisory_xact_lock(
+        hashtextextended(${workspaceId} || ':' || ${weekStart}, 0)
+      )
+    `,
+    neonSql`
       insert into schedules (
         id, workspace_id, week_start, week_end, schedule_snapshot,
-        settings_snapshot, history_trigger, export_format, created_by
+        settings_snapshot, history_trigger, export_format, revision,
+        idempotency_key, created_by
       ) values (
         ${scheduleId}, ${workspaceId}, ${weekStart}::date, ${weekEnd}::date,
         ${JSON.stringify(scheduleSnapshot)}::jsonb,
         ${JSON.stringify(settings)}::jsonb,
-        'excel-export'::history_trigger, ${format}::export_format, ${userId}
+        'excel-export'::history_trigger, ${format}::export_format,
+        (
+          select coalesce(max(revision), 0) + 1
+          from schedules
+          where workspace_id = ${workspaceId} and week_start = ${weekStart}::date
+        ),
+        ${idempotencyKey}::uuid, ${userId}
       )
+      on conflict (workspace_id, idempotency_key) do nothing
     `,
     neonSql`
       insert into schedule_assignments (
@@ -95,10 +110,23 @@ export const createHistoryFromExcelExport = async ({
         id text, employee_id text, employee_name text, work_date text,
         shift_type text, start_time text, end_time text, calculated_hours numeric
       )
+      where exists (select 1 from schedules where id = ${scheduleId})
     `,
   ]);
 
-  return { id: scheduleId };
+  const savedRows = await db
+    .select({ id: schedules.id, revision: schedules.revision })
+    .from(schedules)
+    .where(
+      and(
+        eq(schedules.workspaceId, workspaceId),
+        eq(schedules.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+  const saved = savedRows[0];
+  if (!saved) throw new Error("History transaction completed without a saved record.");
+  return { id: saved.id, revision: saved.revision, created: saved.id === scheduleId };
 };
 
 export const listHistory = async (
@@ -111,6 +139,7 @@ export const listHistory = async (
       weekStart: schedules.weekStart,
       weekEnd: schedules.weekEnd,
       format: schedules.format,
+      revision: schedules.revision,
       createdAt: schedules.createdAt,
       createdBy: schedules.createdBy,
       assignmentCount: count(scheduleAssignments.id),
@@ -165,6 +194,7 @@ export const getHistoryDetail = async (
     weekStart: schedule.weekStart,
     weekEnd: schedule.weekEnd,
     format: schedule.format,
+    revision: schedule.revision,
     createdAt: schedule.createdAt.toISOString(),
     createdBy: schedule.createdBy,
     assignmentCount: assignments.length,

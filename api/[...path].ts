@@ -73,17 +73,16 @@ const handler = async (request: Request): Promise<Response> => {
     if (route.resource === "history" && !route.resourceId && request.method === "POST") {
       await requireWorkspaceAccess(user.id, route.workspaceId, true);
       const payload = createHistoryRequestSchema.parse(await readJson(request));
-      return json(
-        await createHistoryFromExcelExport({
-          workspaceId: route.workspaceId,
-          userId: user.id,
-          weekStart: payload.weekStart,
-          format: payload.format,
-          schedule: payload.schedule,
-          settings: payload.settingsSnapshot,
-        }),
-        { status: 201 },
-      );
+      const result = await createHistoryFromExcelExport({
+        workspaceId: route.workspaceId,
+        userId: user.id,
+        idempotencyKey: payload.idempotencyKey,
+        weekStart: payload.weekStart,
+        format: payload.format,
+        schedule: payload.schedule,
+        settings: payload.settingsSnapshot,
+      });
+      return json(result, { status: result.created ? 201 : 200 });
     }
 
     if (route.resource === "history" && !route.resourceId && request.method === "GET") {

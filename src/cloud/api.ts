@@ -58,12 +58,14 @@ export const saveCloudConfiguration = ({
 
 export const saveExportHistory = ({
   workspaceId,
+  idempotencyKey,
   weekStart,
   format,
   schedule,
   settingsSnapshot,
 }: {
   workspaceId: string;
+  idempotencyKey: string;
   weekStart: string;
   format: ExcelExportMode;
   schedule: WeeklySchedule;
@@ -73,7 +75,7 @@ export const saveExportHistory = ({
     `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}`,
     {
       method: "POST",
-      body: JSON.stringify({ weekStart, format, schedule, settingsSnapshot }),
+      body: JSON.stringify({ idempotencyKey, weekStart, format, schedule, settingsSnapshot }),
     },
   );
 
