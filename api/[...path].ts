@@ -1,23 +1,23 @@
 import { z, ZodError } from "zod";
-import { authenticateRequest } from "../server/auth";
-import { json, readJson, toErrorResponse } from "../server/http";
+import { authenticateRequest } from "../server/auth.js";
+import { json, readJson, toErrorResponse } from "../server/http.js";
 import {
   createHistoryRequestSchema,
   saveConfigurationRequestSchema,
-} from "../src/cloud/contracts";
+} from "../src/cloud/contracts.js";
 import {
   loadConfiguration,
   saveConfiguration,
-} from "../server/services/configuration";
+} from "../server/services/configuration.js";
 import {
   createHistoryFromExcelExport,
   getHistoryDetail,
   listHistory,
-} from "../server/services/history";
+} from "../server/services/history.js";
 import {
   ensurePersonalWorkspace,
   requireWorkspaceAccess,
-} from "../server/services/workspaces";
+} from "../server/services/workspaces.js";
 
 const matchWorkspaceRoute = (pathname: string) => {
   const parts = pathname.split("/").filter(Boolean);

@@ -1,18 +1,18 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
-import type { AppSettings } from "../../src/types";
+import type { AppSettings } from "../../src/types.js";
 import type {
   BootstrapResponse,
   SaveConfigurationResponse,
-} from "../../src/cloud/contracts";
-import { appSettingsSchema } from "../../src/cloud/contracts";
-import { db, neonSql } from "../db/client";
+} from "../../src/cloud/contracts.js";
+import { appSettingsSchema } from "../../src/cloud/contracts.js";
+import { db, neonSql } from "../db/client.js";
 import {
   employeeAvailability,
   employeeCoworkerPreferences,
   employees,
   rosterSettings,
   workspaceImports,
-} from "../db/schema";
+} from "../db/schema.js";
 
 const normalizeTime = (value: string) => value.slice(0, 5);
 

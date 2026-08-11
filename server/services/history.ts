@@ -3,12 +3,12 @@ import type {
   HistoryAssignment,
   HistoryDetail,
   HistoryListItem,
-} from "../../src/cloud/contracts";
-import type { AppSettings, Day, EmployeeStats, WeeklySchedule } from "../../src/types";
-import { days } from "../../src/types";
-import { getHoursBetween } from "../../src/time";
-import { db, neonSql } from "../db/client";
-import { scheduleAssignments, schedules } from "../db/schema";
+} from "../../src/cloud/contracts.js";
+import type { AppSettings, Day, EmployeeStats, WeeklySchedule } from "../../src/types.js";
+import { days } from "../../src/types.js";
+import { getHoursBetween } from "../../src/time.js";
+import { db, neonSql } from "../db/client.js";
+import { scheduleAssignments, schedules } from "../db/schema.js";
 
 const addUtcDays = (isoDate: string, daysToAdd: number) => {
   const date = new Date(`${isoDate}T00:00:00.000Z`);

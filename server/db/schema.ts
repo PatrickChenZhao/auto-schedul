@@ -21,7 +21,7 @@ import type {
   ShiftTemplateMap,
   SpecialSettings,
   WeeklySchedule,
-} from "../../src/types";
+} from "../../src/types.js";
 
 export const workspaceRole = pgEnum("workspace_role", ["owner", "editor", "viewer"]);
 export const employeeType = pgEnum("employee_type", ["full-time", "casual"]);

@@ -1,8 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
-import type { AuthenticatedUser } from "../auth";
-import { db, neonSql } from "../db/client";
-import { workspaceMembers, workspaces } from "../db/schema";
-import type { WorkspaceSummary } from "../../src/cloud/contracts";
+import type { AuthenticatedUser } from "../auth.js";
+import { db, neonSql } from "../db/client.js";
+import { workspaceMembers, workspaces } from "../db/schema.js";
+import type { WorkspaceSummary } from "../../src/cloud/contracts.js";
 
 export const ensurePersonalWorkspace = async (
   user: AuthenticatedUser,
