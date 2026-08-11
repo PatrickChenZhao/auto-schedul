@@ -13,6 +13,7 @@ import {
   rosterSettings,
   workspaceImports,
 } from "../db/schema.js";
+import { buildConfigurationDatabaseRows } from "./databaseRows.js";
 
 const normalizeTime = (value: string) => value.slice(0, 5);
 
@@ -134,35 +135,8 @@ export const saveConfiguration = async ({
     }
   }
 
-  const employeeRows = settings.employees.map((employee, sortOrder) => {
-    const preference = settings.preferences[employee.id];
-    return {
-      id: employee.id,
-      name: employee.name,
-      type: employee.type,
-      enabled: employee.enabled,
-      sortOrder,
-      preferredShift: preference.shiftPreference,
-      refuseLateShift: preference.refuseLateShift,
-      minDays: preference.minDays,
-      maxDays: preference.maxDays,
-    };
-  });
-  const availabilityRows = settings.employees.flatMap((employee) =>
-    Object.entries(settings.availability[employee.id]).map(([day, entry]) => ({
-      employeeId: employee.id,
-      day,
-      available: entry.available,
-      startTime: entry.start,
-      endTime: entry.end,
-    })),
-  );
-  const activeEmployeeIds = new Set(settings.employees.map((employee) => employee.id));
-  const coworkerRows = settings.employees.flatMap((employee) =>
-    settings.preferences[employee.id].coworkers
-      .filter((preference) => activeEmployeeIds.has(preference.coworkerId))
-      .map((preference) => ({ employeeId: employee.id, ...preference })),
-  );
+  const { employeeRows, availabilityRows, coworkerRows } =
+    buildConfigurationDatabaseRows(settings);
 
   const transactionQueries = [
     neonSql`

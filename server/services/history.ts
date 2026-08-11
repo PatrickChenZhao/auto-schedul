@@ -6,15 +6,12 @@ import type {
 } from "../../src/cloud/contracts.js";
 import type { AppSettings, Day, EmployeeStats, WeeklySchedule } from "../../src/types.js";
 import { days } from "../../src/types.js";
-import { getHoursBetween } from "../../src/time.js";
 import { db, neonSql } from "../db/client.js";
 import { scheduleAssignments, schedules } from "../db/schema.js";
-
-const addUtcDays = (isoDate: string, daysToAdd: number) => {
-  const date = new Date(`${isoDate}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + daysToAdd);
-  return date.toISOString().slice(0, 10);
-};
+import {
+  addUtcDays,
+  buildHistoryAssignmentDatabaseRows,
+} from "./databaseRows.js";
 
 const buildStats = (
   settings: AppSettings,
@@ -66,24 +63,11 @@ export const createHistoryFromExcelExport = async ({
   const employeeNames = Object.fromEntries(
     settings.employees.map((employee) => [employee.id, employee.name]),
   );
-  const activeEmployeeIds = new Set(settings.employees.map((employee) => employee.id));
-  const assignmentRows = days.flatMap((day, dayIndex) =>
-    schedule[day]
-      .filter((assignment) => activeEmployeeIds.has(assignment.employeeId))
-      .map((assignment) => {
-        const template = settings.shiftTemplates[day][assignment.shiftType];
-        return {
-          id: crypto.randomUUID(),
-          employeeId: assignment.employeeId,
-          employeeName: employeeNames[assignment.employeeId],
-          workDate: addUtcDays(weekStart, dayIndex),
-          shiftType: assignment.shiftType,
-          startTime: template.start,
-          endTime: template.end,
-          calculatedHours: getHoursBetween(template.start, template.end),
-        };
-      }),
-  );
+  const assignmentRows = buildHistoryAssignmentDatabaseRows({
+    weekStart,
+    schedule,
+    settings,
+  });
 
   const scheduleSnapshot = { schedule, employeeNames };
   await neonSql.transaction([
