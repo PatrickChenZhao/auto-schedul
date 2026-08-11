@@ -302,7 +302,7 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
                       {cloud.syncStatus === "saving"
                         ? "Saving configuration…"
                         : cloud.syncStatus === "error"
-                          ? "Cloud save failed"
+                          ? `Cloud save failed: ${cloud.errorMessage || "Unknown error"}`
                           : cloud.workspace?.name ?? "Cloud connected"}
                     </span>
                   </div>

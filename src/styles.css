@@ -24,7 +24,7 @@
 }
 
 .cloud-account-copy strong,
-.cloud-account-copy span {
+.cloud-account-copy span:not(.error) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -38,6 +38,7 @@
 .sync-status.error {
   color: #ffb7b7;
   opacity: 1;
+  overflow-wrap: anywhere;
 }
 
 .cloud-error-banner {

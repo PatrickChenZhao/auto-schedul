@@ -10,9 +10,10 @@ export const authClient = cloudIsConfigured
 
 export const getAuthToken = async () => {
   if (!authClient) throw new Error("Neon Auth is not configured.");
-  const result = await authClient.token();
-  if (result.error || !result.data?.token) {
-    throw new Error(result.error?.message ?? "Unable to obtain an authentication token.");
+  const session = await authClient.getSession();
+  const token = session.data?.session?.token;
+  if (!token) {
+    throw new Error("Unable to obtain a Neon Auth JWT. Please sign out and sign in again.");
   }
-  return result.data.token;
+  return token;
 };
