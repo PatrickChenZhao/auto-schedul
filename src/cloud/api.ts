@@ -35,7 +35,7 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 };
 
 export const bootstrapCloudWorkspace = () =>
-  request<BootstrapResponse>("/api/bootstrap");
+  request<BootstrapResponse>("/api/cloud?action=bootstrap");
 
 export const saveCloudConfiguration = ({
   workspaceId,
@@ -48,10 +48,13 @@ export const saveCloudConfiguration = ({
   source: "autosave" | "local-storage-import" | "new-workspace";
   sourceFingerprint?: string;
 }) =>
-  request<SaveConfigurationResponse>(`/api/workspaces/${workspaceId}/configuration`, {
-    method: "PUT",
-    body: JSON.stringify({ settings, source, sourceFingerprint }),
-  });
+  request<SaveConfigurationResponse>(
+    `/api/cloud?action=configuration&workspaceId=${encodeURIComponent(workspaceId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ settings, source, sourceFingerprint }),
+    },
+  );
 
 export const saveExportHistory = ({
   workspaceId,
@@ -66,17 +69,22 @@ export const saveExportHistory = ({
   schedule: WeeklySchedule;
   settingsSnapshot: AppSettings;
 }) =>
-  request<{ id: string }>(`/api/workspaces/${workspaceId}/history`, {
-    method: "POST",
-    body: JSON.stringify({ weekStart, format, schedule, settingsSnapshot }),
-  });
+  request<{ id: string }>(
+    `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ weekStart, format, schedule, settingsSnapshot }),
+    },
+  );
 
 export const fetchHistory = async (workspaceId: string) => {
   const response = await request<{ items: HistoryListItem[] }>(
-    `/api/workspaces/${workspaceId}/history`,
+    `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}`,
   );
   return response.items;
 };
 
 export const fetchHistoryDetail = (workspaceId: string, historyId: string) =>
-  request<HistoryDetail>(`/api/workspaces/${workspaceId}/history/${historyId}`);
+  request<HistoryDetail>(
+    `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}&historyId=${encodeURIComponent(historyId)}`,
+  );

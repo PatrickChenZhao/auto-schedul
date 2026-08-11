@@ -19,7 +19,17 @@ import {
   requireWorkspaceAccess,
 } from "../server/services/workspaces.js";
 
-const matchWorkspaceRoute = (pathname: string) => {
+const matchWorkspaceRoute = (pathname: string, searchParams: URLSearchParams) => {
+  if (pathname === "/api/cloud") {
+    const action = searchParams.get("action");
+    const workspaceId = searchParams.get("workspaceId");
+    if (!workspaceId || (action !== "configuration" && action !== "history")) return null;
+    return {
+      workspaceId,
+      resource: action,
+      resourceId: searchParams.get("historyId") ?? undefined,
+    };
+  }
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "api" || parts[1] !== "workspaces" || !parts[2]) return null;
   return {
@@ -34,12 +44,16 @@ const handler = async (request: Request): Promise<Response> => {
     const user = await authenticateRequest(request);
     const { pathname, searchParams } = new URL(request.url);
 
-    if (request.method === "GET" && pathname === "/api/bootstrap") {
+    const cloudAction = pathname === "/api/cloud" ? searchParams.get("action") : null;
+    if (
+      request.method === "GET" &&
+      (pathname === "/api/bootstrap" || cloudAction === "bootstrap")
+    ) {
       const workspace = await ensurePersonalWorkspace(user);
       return json(await loadConfiguration(workspace));
     }
 
-    const route = matchWorkspaceRoute(pathname);
+    const route = matchWorkspaceRoute(pathname, searchParams);
     if (!route) return json({ error: "API route not found." }, { status: 404 });
     route.workspaceId = z.string().uuid().parse(route.workspaceId);
     if (route.resourceId) route.resourceId = z.string().uuid().parse(route.resourceId);
