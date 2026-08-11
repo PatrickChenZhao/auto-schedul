@@ -4,7 +4,9 @@
   Check,
   ChevronLeft,
   ChevronRight,
+  Cloud,
   Clock,
+  Database,
   Download,
   FileDown,
   FileUp,
@@ -298,13 +300,21 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
                 <>
                   <div className="cloud-account-copy">
                     <strong>{cloudAuth.user.name || cloudAuth.user.email || "Signed in"}</strong>
-                    <span className={`sync-status ${cloud.syncStatus}`}>
+                    <span
+                      className={`sync-status ${cloud.syncStatus}`}
+                      aria-live="polite"
+                      title={cloud.syncStatus === "error" ? cloud.errorMessage : undefined}
+                    >
+                      <i aria-hidden="true" />
                       {cloud.syncStatus === "saving"
-                        ? "Saving configuration…"
+                        ? "Saving changes…"
                         : cloud.syncStatus === "error"
-                          ? `Cloud save failed: ${cloud.errorMessage || "Unknown error"}`
-                          : cloud.workspace?.name ?? "Cloud connected"}
+                          ? `Save failed: ${cloud.errorMessage || "Unknown error"}`
+                          : cloud.syncStatus === "saved"
+                            ? "All changes saved"
+                            : "Cloud connected"}
                     </span>
+                    {cloud.workspace && <small>{cloud.workspace.name}</small>}
                   </div>
                   <button className="ghost-button" onClick={() => void cloudAuth.signOut()}>
                     <LogOut size={16} />
@@ -1797,6 +1807,9 @@ function HistoryPage({
     );
   };
 
+  const detailTotalHours = detail?.stats.reduce((sum, stat) => sum + stat.totalHours, 0) ?? 0;
+  const detailEmployeeCount = detail?.stats.filter((stat) => stat.workDays > 0).length ?? 0;
+
   if (!cloudConfigured) {
     return (
       <section>
@@ -1870,6 +1883,24 @@ function HistoryPage({
                     Download again
                   </button>
                 </div>
+                <div className="history-summary-grid">
+                  <div className="history-summary-card">
+                    <span>Format</span>
+                    <strong>{detail.format === "general" ? "General" : "Chapanda"}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Shifts</span>
+                    <strong>{detail.assignmentCount}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Employees</span>
+                    <strong>{detailEmployeeCount}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Total hours</span>
+                    <strong>{formatNumber(detailTotalHours)}</strong>
+                  </div>
+                </div>
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -1925,20 +1956,36 @@ function CloudMigrationModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <div className="modal cloud-migration-modal" role="dialog" aria-modal="true" aria-label="First cloud setup">
-        <div className="modal-header"><h2>First cloud setup</h2></div>
-        <p>
-          This workspace does not have saved configuration yet. Choose whether to import the
-          configuration currently stored in this browser. The current schedule remains a local draft
-          and will not be added to History.
-        </p>
-        {errorMessage && <div className="cloud-error-banner">{errorMessage}</div>}
-        <div className="modal-actions migration-actions">
-          <button className="secondary-button" disabled={busy} onClick={() => void run(onFresh)}>
-            Use fresh defaults
-          </button>
-          <button className="primary-button" disabled={busy} onClick={() => void run(onImport)}>
-            {busy ? "Saving…" : "Import browser configuration"}
-          </button>
+        <div className="modal-header migration-header">
+          <div className="migration-title">
+            <span><Cloud size={15} /> Neon cloud sync</span>
+            <h2>Set up your workspace</h2>
+          </div>
+        </div>
+        <div className="migration-body">
+          <p>
+            Choose how to initialise this workspace. Your saved configuration will sync automatically
+            after setup.
+          </p>
+          <div className="migration-points">
+            <div>
+              <Database size={18} />
+              <span><strong>Import this browser</strong> keeps your employees, availability and roster settings.</span>
+            </div>
+            <div>
+              <History size={18} />
+              <span><strong>Your current schedule stays local</strong> and is only added to History after an Excel export.</span>
+            </div>
+          </div>
+          {errorMessage && <div className="cloud-error-banner">{errorMessage}</div>}
+          <div className="modal-actions migration-actions">
+            <button className="secondary-button" disabled={busy} onClick={() => void run(onFresh)}>
+              Start with defaults
+            </button>
+            <button className="primary-button" disabled={busy} onClick={() => void run(onImport)}>
+              {busy ? "Importing…" : "Import this browser"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
