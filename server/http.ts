@@ -22,5 +22,13 @@ export const readJson = async (request: Request): Promise<unknown> => {
 export const toErrorResponse = (error: unknown) => {
   if (error instanceof Response) return error;
   console.error(error);
-  return json({ error: "Internal server error." }, { status: 500 });
+  const isPreview = process.env.VERCEL_ENV === "preview";
+  const previewMessage =
+    isPreview && error instanceof Error
+      ? `${error.name}: ${error.message}`.replace(/\s+/g, " ").slice(0, 500)
+      : "";
+  return json(
+    { error: previewMessage || "Internal server error." },
+    { status: 500 },
+  );
 };
