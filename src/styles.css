@@ -8,6 +8,128 @@
   text-rendering: optimizeLegibility;
 }
 
+.cloud-account {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cloud-account-copy {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px;
+  color: #fff;
+}
+
+.cloud-account-copy strong,
+.cloud-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-account-copy span {
+  font-size: 0.75rem;
+  opacity: 0.72;
+}
+
+.sync-status.error {
+  color: #ffb7b7;
+  opacity: 1;
+}
+
+.cloud-error-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #f0b7b7;
+  border-radius: 10px;
+  color: #9c2525;
+  background: #fff2f2;
+}
+
+.history-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.history-list-panel {
+  position: sticky;
+  top: 20px;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.history-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dfe5ee;
+  border-radius: 10px;
+  text-align: left;
+  color: #27364b;
+  background: #fff;
+  cursor: pointer;
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: #4f7fd9;
+  background: #f2f6ff;
+}
+
+.history-item span,
+.history-item time,
+.history-detail-title p {
+  color: #6b7789;
+  font-size: 0.8rem;
+}
+
+.history-detail-stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.history-detail-title {
+  align-items: center;
+}
+
+.history-detail-title p {
+  margin: 4px 0 0;
+}
+
+.cloud-migration-modal {
+  max-width: 560px;
+}
+
+.cloud-migration-modal > p {
+  margin: 0 0 18px;
+  color: #536174;
+  line-height: 1.55;
+}
+
+.migration-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 980px) {
+  .history-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .history-list-panel {
+    position: static;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

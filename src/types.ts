@@ -69,13 +69,18 @@ export type ShiftAssignment = {
 
 export type WeeklySchedule = Record<Day, ShiftAssignment[]>;
 
-export type AppState = {
+export type AppSettings = {
   employees: Employee[];
   availability: AvailabilityMap;
   preferences: PreferenceMap;
   shiftDemand: ShiftDemand;
   shiftTemplates: ShiftTemplateMap;
   specialSettings: SpecialSettings;
+};
+
+export type SchedulingInput = AppSettings;
+
+export type AppState = AppSettings & {
   schedule: WeeklySchedule;
 };
 

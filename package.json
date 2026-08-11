@@ -5,20 +5,33 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc && vite build",
+    "build": "pnpm typecheck && vite build",
+    "typecheck": "tsc && tsc -p tsconfig.server.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs migrate",
+    "db:studio": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs studio",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@neondatabase/auth": "0.4.2-beta",
+    "@neondatabase/serverless": "1.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "drizzle-orm": "0.45.2",
+    "jose": "6.1.3",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
-    "xlsx-js-style": "^1.2.0"
+    "xlsx-js-style": "^1.2.0",
+    "zod": "4.3.6"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
     "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "0.31.10",
+    "vitest": "^3.2.4"
   }
 }
