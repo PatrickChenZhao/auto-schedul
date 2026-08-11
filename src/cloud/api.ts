@@ -19,8 +19,17 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
     },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? `Cloud request failed (${response.status}).`);
+    const responseText = await response.text();
+    let message = "";
+    try {
+      const body = JSON.parse(responseText) as { error?: unknown };
+      if (typeof body.error === "string") message = body.error;
+    } catch {
+      if (responseText && !responseText.trimStart().startsWith("<")) {
+        message = responseText.trim();
+      }
+    }
+    throw new Error(message || `Cloud request failed (${response.status}).`);
   }
   return response.json() as Promise<T>;
 };
