@@ -50,6 +50,14 @@ const rebalanceDays: Day[] = [
 
 const maxSameShiftTypePerWeek = 3;
 
+// Internal-only feature flags. These are intentionally not exposed in AppState or the UI.
+const internalSchedulerFeatureFlags = {
+  preferZhaoChenAndSunFeiyuSameDay: true,
+};
+
+const preferredSameDayEmployeeNames = ["赵宸", "孙菲雨"] as const;
+const preferredSameDayPenaltyPerUnpairedDay = 5;
+
 const autoCompleteDayLabels: Record<Day, string> = {
   Monday: "星期一",
   Tuesday: "星期二",
@@ -119,6 +127,41 @@ const getMinDays = (state: SchedulingInput, employee: Employee) => {
 
 const isBelowMinimumDays = (context: EngineContext, employee: Employee) =>
   (context.counts[employee.id] ?? 0) < getMinDays(context.state, employee);
+
+const getPreferredSameDayPair = (
+  state: SchedulingInput,
+): [Employee, Employee] | null => {
+  if (!internalSchedulerFeatureFlags.preferZhaoChenAndSunFeiyuSameDay) return null;
+
+  const pair = preferredSameDayEmployeeNames.map((name) =>
+    state.employees.find(
+      (employee) => employee.enabled && employee.name.trim() === name,
+    ),
+  );
+
+  return pair[0] && pair[1] ? [pair[0], pair[1]] : null;
+};
+
+const getPreferredSameDayCandidateRank = (
+  context: EngineContext,
+  employee: Employee,
+  day: Day,
+) => {
+  const pair = getPreferredSameDayPair(context.state);
+  if (!pair) return 1;
+
+  const [firstEmployee, secondEmployee] = pair;
+  const counterpartId =
+    employee.id === firstEmployee.id
+      ? secondEmployee.id
+      : employee.id === secondEmployee.id
+        ? firstEmployee.id
+        : null;
+
+  return counterpartId && alreadyScheduled(context.schedule, counterpartId, day)
+    ? 0
+    : 1;
+};
 
 const usesBindingFirst = (state: SchedulingInput) =>
   state.specialSettings.priorityMode === "binding-first" ||
@@ -216,6 +259,11 @@ const scoreCandidate = (
       : preference?.shiftPreference === "any" || !preference
         ? 1
         : 2;
+  const preferredSameDayRank = getPreferredSameDayCandidateRank(
+    context,
+    employee,
+    day,
+  );
   const priorityRanks = usesBindingFirst(context.state)
       ? [coworkerBindingRank, fullTimeBalanceRank, fullTimeHoursRank]
       : [fullTimeBalanceRank, fullTimeHoursRank, coworkerBindingRank];
@@ -227,6 +275,7 @@ const scoreCandidate = (
       ...priorityRanks,
       employee.type === "casual" ? casualLoad : assignedDays,
       shiftPreferenceRank,
+      preferredSameDayRank,
       employee.name.toLowerCase(),
     ];
   }
@@ -237,6 +286,7 @@ const scoreCandidate = (
     needsMinimum,
     employee.type === "casual" ? casualLoad : assignedDays,
     shiftPreferenceRank,
+    preferredSameDayRank,
     employee.name.toLowerCase(),
   ];
 };
@@ -806,6 +856,23 @@ const createVariantSelector = (variantSeed: number): CandidateSelector => {
   };
 };
 
+const getPreferredSameDayPenalty = (
+  state: SchedulingInput,
+  schedule: WeeklySchedule,
+) => {
+  const pair = getPreferredSameDayPair(state);
+  if (!pair) return 0;
+
+  const [firstEmployee, secondEmployee] = pair;
+  const unpairedDayCount = days.filter(
+    (day) =>
+      alreadyScheduled(schedule, firstEmployee.id, day) !==
+      alreadyScheduled(schedule, secondEmployee.id, day),
+  ).length;
+
+  return unpairedDayCount * preferredSameDayPenaltyPerUnpairedDay;
+};
+
 const scoreSchedule = (
   state: SchedulingInput,
   schedule: WeeklySchedule,
@@ -893,7 +960,8 @@ const scoreSchedule = (
     hardCoworkerPenalty * 180 +
     softCoworkerPenalty * 60 +
     preferencePenalty * 35 +
-    fullTimeHourSpread * 10
+    fullTimeHourSpread * 10 +
+    getPreferredSameDayPenalty(state, schedule)
   );
 };
 
