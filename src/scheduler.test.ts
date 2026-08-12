@@ -6,7 +6,7 @@ import {
   generateWeeklyScheduleOptions,
   upsertManualShift,
 } from "./scheduler";
-import { WeeklySchedule, days } from "./types";
+import { WeeklySchedule, days, shiftTypes } from "./types";
 
 const scheduleSignature = (schedule: WeeklySchedule) =>
   days
@@ -97,5 +97,77 @@ describe("scheduler characterization", () => {
       { employeeId: "emp-patrick", shiftType: "late" },
     ]);
     expect(deleteManualShift(replaced, "Tuesday", "emp-patrick").Tuesday).toEqual([]);
+  });
+});
+
+describe("internal named-employee soft constraint", () => {
+  const createNamedPairState = () => {
+    const state = createDefaultState();
+    const [zhaoChen, sunFeiyu, otherEmployee] = state.employees;
+
+    zhaoChen.name = "赵宸";
+    sunFeiyu.name = "孙菲雨";
+    otherEmployee.name = "A";
+    otherEmployee.type = "full-time";
+    state.employees = [zhaoChen, sunFeiyu, otherEmployee];
+
+    state.employees.forEach((employee) => {
+      state.preferences[employee.id] = {
+        shiftPreference: "any",
+        refuseLateShift: false,
+        minDays: 0,
+        maxDays: 7,
+        coworkers: [],
+      };
+    });
+
+    days.forEach((day) => {
+      shiftTypes.forEach((shiftType) => {
+        state.shiftDemand[day][shiftType] = 0;
+      });
+      state.employees.forEach((employee) => {
+        state.availability[employee.id][day].available = false;
+      });
+    });
+
+    state.shiftDemand.Monday.early = 1;
+    state.shiftDemand.Monday.mid = 1;
+    state.employees.forEach((employee) => {
+      state.availability[employee.id].Monday = {
+        available: true,
+        start: "09:45",
+        end: "23:00",
+      };
+    });
+    state.schedule = upsertManualShift(createEmptySchedule(), "Monday", {
+      employeeId: zhaoChen.id,
+      shiftType: "early",
+    });
+
+    return { state, zhaoChen, sunFeiyu, otherEmployee };
+  };
+
+  it("slightly prefers scheduling 赵宸 and 孙菲雨 on the same day", () => {
+    const { state, sunFeiyu } = createNamedPairState();
+
+    const result = autoCompleteScheduleFrom(state, state.schedule);
+
+    expect(result.schedule.Monday).toContainEqual({
+      employeeId: sunFeiyu.id,
+      shiftType: "mid",
+    });
+  });
+
+  it("does not force the pair when one employee is unavailable", () => {
+    const { state, sunFeiyu, otherEmployee } = createNamedPairState();
+    state.availability[sunFeiyu.id].Monday.available = false;
+
+    const result = autoCompleteScheduleFrom(state, state.schedule);
+
+    expect(result.schedule.Monday).toContainEqual({
+      employeeId: otherEmployee.id,
+      shiftType: "mid",
+    });
+    expect(result.warnings).toEqual([]);
   });
 });
