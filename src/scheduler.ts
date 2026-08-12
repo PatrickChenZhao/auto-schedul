@@ -2,9 +2,9 @@ import { createEmptySchedule, getShiftTemplate } from "./data";
 import { getHoursBetween } from "./time";
 import { timeToMinutes } from "./time";
 import {
-  AppState,
   Day,
   Employee,
+  SchedulingInput,
   ScheduleOption,
   ScheduleWarning,
   ShiftAssignment,
@@ -15,7 +15,7 @@ import {
 } from "./types";
 
 type EngineContext = {
-  state: AppState;
+  state: SchedulingInput;
   schedule: WeeklySchedule;
   counts: Record<string, number>;
   hours: Record<string, number>;
@@ -66,11 +66,11 @@ const autoCompleteShiftLabels: Record<ShiftType, string> = {
   late: "晚班",
 };
 
-const isShiftTypeCapEnabled = (state: AppState) =>
+const isShiftTypeCapEnabled = (state: SchedulingInput) =>
   state.specialSettings.shiftTypeCapEnabled !== false;
 
 const isAvailableForShift = (
-  state: AppState,
+  state: SchedulingInput,
   employeeId: string,
   day: Day,
   shiftType: ShiftType,
@@ -106,13 +106,13 @@ const countShiftTypeAssignments = (
     0,
   );
 
-const getMaxDays = (state: AppState, employee: Employee) => {
+const getMaxDays = (state: SchedulingInput, employee: Employee) => {
   const configured = state.preferences[employee.id]?.maxDays;
   if (Number.isFinite(configured)) return configured;
   return employee.type === "casual" ? 3 : 6;
 };
 
-const getMinDays = (state: AppState, employee: Employee) => {
+const getMinDays = (state: SchedulingInput, employee: Employee) => {
   const configured = state.preferences[employee.id]?.minDays;
   return Number.isFinite(configured) ? configured : 0;
 };
@@ -120,7 +120,7 @@ const getMinDays = (state: AppState, employee: Employee) => {
 const isBelowMinimumDays = (context: EngineContext, employee: Employee) =>
   (context.counts[employee.id] ?? 0) < getMinDays(context.state, employee);
 
-const usesBindingFirst = (state: AppState) =>
+const usesBindingFirst = (state: SchedulingInput) =>
   state.specialSettings.priorityMode === "binding-first" ||
   state.specialSettings.priorityMode === "work-day-first";
 
@@ -333,7 +333,7 @@ const fillShift = (
 };
 
 const canWorkShift = (
-  state: AppState,
+  state: SchedulingInput,
   employee: Employee,
   day: Day,
   shiftType: ShiftType,
@@ -349,7 +349,7 @@ const canWorkShift = (
 };
 
 const getCoworkerRelationshipRank = (
-  state: AppState,
+  state: SchedulingInput,
   employeeId: string,
   coworkerId: string,
 ) => {
@@ -386,7 +386,7 @@ const getEmployeeShiftCounts = (
 };
 
 const hasShiftTypeCapViolation = (
-  state: AppState,
+  state: SchedulingInput,
   schedule: WeeklySchedule,
 ) =>
   isShiftTypeCapEnabled(state) &&
@@ -409,7 +409,7 @@ const getShiftBalancePenalty = (counts: Record<ShiftType, number>) => {
   return spread * 120 + concentration * 20 + missingShiftPenalty;
 };
 
-const getDailyBindingLatePenalty = (state: AppState, schedule: WeeklySchedule) => {
+const getDailyBindingLatePenalty = (state: SchedulingInput, schedule: WeeklySchedule) => {
   let penalty = 0;
 
   days.forEach((day) => {
@@ -753,7 +753,7 @@ const cloneSchedule = (schedule: WeeklySchedule) =>
     return copy;
   }, {} as WeeklySchedule);
 
-const createEmptyContextMetrics = (state: AppState) => ({
+const createEmptyContextMetrics = (state: SchedulingInput) => ({
   counts: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
   hours: Object.fromEntries(state.employees.map((employee) => [employee.id, 0])),
   shiftGroupCounts: {
@@ -763,7 +763,7 @@ const createEmptyContextMetrics = (state: AppState) => ({
 });
 
 const createContext = (
-  state: AppState,
+  state: SchedulingInput,
   initialSchedule: WeeklySchedule = createEmptySchedule(),
 ): EngineContext => {
   const metrics = createEmptyContextMetrics(state);
@@ -806,7 +806,11 @@ const createVariantSelector = (variantSeed: number): CandidateSelector => {
   };
 };
 
-const scoreSchedule = (state: AppState, schedule: WeeklySchedule, warnings: ScheduleWarning[]) => {
+const scoreSchedule = (
+  state: SchedulingInput,
+  schedule: WeeklySchedule,
+  warnings: ScheduleWarning[],
+) => {
   const assignmentCounts = Object.fromEntries(
     state.employees.map((employee) => [employee.id, 0]),
   );
@@ -904,7 +908,7 @@ const createScheduleSignature = (schedule: WeeklySchedule) =>
     .join("|");
 
 const generateScheduleWithSelector = (
-  state: AppState,
+  state: SchedulingInput,
   selectCandidate: CandidateSelector,
 ): ScheduleResult => {
   const context = createContext(state);
@@ -924,7 +928,7 @@ const generateScheduleWithSelector = (
 };
 
 export const generateWeeklyScheduleOptions = (
-  state: AppState,
+  state: SchedulingInput,
   optionCount = 5,
 ): ScheduleOption[] => {
   const candidates: ScheduleResult[] = [];
@@ -949,7 +953,7 @@ export const generateWeeklyScheduleOptions = (
     }));
 };
 
-export const generateWeeklySchedule = (state: AppState) => {
+export const generateWeeklySchedule = (state: SchedulingInput) => {
   const [bestOption] = generateWeeklyScheduleOptions(state, 1);
   return {
     schedule: bestOption?.schedule ?? createEmptySchedule(),
@@ -957,8 +961,11 @@ export const generateWeeklySchedule = (state: AppState) => {
   };
 };
 
-export const autoCompleteSchedule = (state: AppState) => {
-  const context = createContext(state, state.schedule);
+export const autoCompleteScheduleFrom = (
+  state: SchedulingInput,
+  initialSchedule: WeeklySchedule,
+) => {
+  const context = createContext(state, initialSchedule);
 
   shiftTypes.forEach((shiftType) => {
     days.forEach((day) => fillShift(context, day, shiftType, createVariantSelector(0)));

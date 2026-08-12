@@ -81,6 +81,11 @@ const downloadBlob = (blob: Blob, fileName: string) => {
   URL.revokeObjectURL(url);
 };
 
+export type PreparedExcelExport = {
+  blob: Blob;
+  fileName: string;
+};
+
 const ensureCell = (
   worksheet: XLSX.WorkSheet,
   rowIndex: number,
@@ -395,19 +400,30 @@ export const exportJsonBackup = (state: AppState) => {
   );
 };
 
-export const exportExcelSchedule = (
+export const prepareExcelSchedule = (
   state: AppState,
   mode: ExcelExportMode = "chapanda",
   weekStartDate: Date = getCurrentWeekMonday(),
-) => {
+): PreparedExcelExport => {
   const workbook =
     mode === "general"
       ? buildGeneralWorkbook(state, weekStartDate)
       : buildChapandaWorkbook(state, weekStartDate);
   const weekEndDate = addDays(weekStartDate, 6);
-  XLSX.writeFile(
-    workbook,
-    `weekly_schedule_${formatFileDate(weekStartDate)}_to_${formatFileDate(weekEndDate)}.xlsx`,
-    { bookType: "xlsx" },
-  );
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  return {
+    blob: new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    fileName: `weekly_schedule_${formatFileDate(weekStartDate)}_to_${formatFileDate(weekEndDate)}.xlsx`,
+  };
 };
+
+export const downloadPreparedExcel = ({ blob, fileName }: PreparedExcelExport) =>
+  downloadBlob(blob, fileName);
+
+export const exportExcelSchedule = (
+  state: AppState,
+  mode: ExcelExportMode = "chapanda",
+  weekStartDate: Date = getCurrentWeekMonday(),
+) => downloadPreparedExcel(prepareExcelSchedule(state, mode, weekStartDate));

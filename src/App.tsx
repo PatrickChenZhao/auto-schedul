@@ -4,12 +4,17 @@
   Check,
   ChevronLeft,
   ChevronRight,
+  Cloud,
   Clock,
+  Database,
   Download,
   FileDown,
   FileUp,
   GripVertical,
+  History,
   LayoutDashboard,
+  LogIn,
+  LogOut,
   Plus,
   RotateCcw,
   Settings,
@@ -21,26 +26,41 @@
   X,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { usePersistentAppState } from "./app/usePersistentAppState";
+import { useScheduleWorkspace } from "./app/useScheduleWorkspace";
+import { useCloudWorkspace } from "./cloud/useCloudWorkspace";
+import { completeOfficialExcelExport } from "./cloud/officialExcelExport";
 import {
-  createEmptySchedule,
-  createDefaultAvailability,
-  createDefaultShiftTemplates,
-  defaultAvailabilityEntry,
-  defaultPreference,
   defaultShiftTemplates,
   getShiftTemplate,
   shiftColors,
   shiftLabels,
 } from "./data";
-import { ExcelExportMode, exportExcelSchedule, exportJsonBackup } from "./exporters";
 import {
-  autoCompleteSchedule,
-  deleteManualShift,
-  generateWeeklyScheduleOptions,
-  upsertManualShift,
-} from "./scheduler";
+  downloadPreparedExcel,
+  ExcelExportMode,
+  exportJsonBackup,
+  prepareExcelSchedule,
+} from "./exporters";
+import type { HistoryDetail, HistoryListItem } from "./cloud/contracts";
 import { calculateEmployeeStats } from "./stats";
-import { loadAppState, normalizeAppState, saveAppState } from "./storage";
+import { normalizeAppState } from "./persistence/normalizeAppState";
+import {
+  addEmployeeToState,
+  moveEmployeeInState,
+  removeEmployeeFromState,
+  renameEmployeeInState,
+  resetShiftTemplatesInState,
+  setEarlyShiftAllowedInState,
+  setEmployeeEnabledInState,
+  setEmployeeTypeInState,
+  setPriorityModeInState,
+  setShiftDemandInState,
+  setShiftTemplateInState,
+  setShiftTypeCapEnabledInState,
+  updateAvailabilityInState,
+  updatePreferenceInState,
+} from "./settings/appStateActions";
 import {
   AppState,
   Day,
@@ -58,6 +78,7 @@ import { timeToMinutes, timelineEnd, timelineSlots, timelineStart } from "./time
 
 type Page =
   | "schedule"
+  | "history"
   | "employees"
   | "availability"
   | "preferences"
@@ -71,6 +92,7 @@ const navItems: Array<{
   icon: typeof CalendarDays;
 }> = [
   { page: "schedule", label: "Schedule", icon: CalendarDays },
+  { page: "history", label: "History", icon: History },
   { page: "employees", label: "Employee Management", icon: Users },
   { page: "availability", label: "Availability", icon: Clock },
   { page: "preferences", label: "Preferences", icon: Star },
@@ -120,25 +142,43 @@ const defaultShiftTemplateTooltip = [
 const autoCompleteTooltipText =
   "不修改已经录入的班次，自动补全其他剩余空班次";
 
-function App() {
-  const [state, setState] = useState<AppState>(() => loadAppState());
+export type CloudAuthState = {
+  configured: true;
+  pending: boolean;
+  user: null | { id: string; name?: string | null; email?: string | null };
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+};
+
+function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
+  const [state, setState] = usePersistentAppState();
   const [page, setPage] = useState<Page>("schedule");
   const [selectedDay, setSelectedDay] = useState<Day>("Monday");
   const [weekStartDate, setWeekStartDate] = useState<Date>(() => getWeekMonday());
-  const [warnings, setWarnings] = useState<ScheduleWarning[]>([]);
-  const [scheduleOptions, setScheduleOptions] = useState<ScheduleOption[]>([]);
-  const [selectedScheduleOptionId, setSelectedScheduleOptionId] = useState("");
   const [excelExportModalOpen, setExcelExportModalOpen] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<ShiftAssignment | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(
     state.employees[0]?.id ?? "",
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    saveAppState(state);
-  }, [state]);
+  const {
+    warnings,
+    setWarnings,
+    scheduleOptions,
+    selectedScheduleOptionId,
+    updateState,
+    replaceState,
+    runAutoSchedule: generateAutoSchedule,
+    selectScheduleOption,
+    autoCompleteCurrentSchedule,
+    startManualSchedule,
+    upsertManualAssignment,
+    changeManualAssignmentShift,
+    deleteManualAssignment,
+  } = useScheduleWorkspace(state, setState);
+  const cloud = useCloudWorkspace({ auth: cloudAuth, state, setState });
 
   useEffect(() => {
     if (!state.employees.some((employee) => employee.id === selectedEmployeeId)) {
@@ -148,50 +188,50 @@ function App() {
 
   const stats = useMemo(() => calculateEmployeeStats(state), [state]);
 
-  const updateState = (recipe: (current: AppState) => AppState) => {
-    setScheduleOptions([]);
-    setSelectedScheduleOptionId("");
-    setState((current) => recipe(current));
-  };
-
   const runAutoSchedule = () => {
-    const options = generateWeeklyScheduleOptions(state, 5);
-    const bestOption = options[0];
-    setScheduleOptions(options);
-    setSelectedScheduleOptionId(bestOption?.id ?? "");
-    setState((current) => ({
-      ...current,
-      schedule: bestOption?.schedule ?? createEmptySchedule(),
-    }));
-    setWarnings(
-      bestOption?.warnings.length
-        ? bestOption.warnings
-        : [{ type: "fallback", message: "Schedule generated successfully." }],
-    );
+    generateAutoSchedule();
     setPage("schedule");
   };
 
-  const clearScheduleOptions = () => {
-    setScheduleOptions([]);
-    setSelectedScheduleOptionId("");
-  };
-
-  const selectScheduleOption = (option: ScheduleOption) => {
-    setSelectedScheduleOptionId(option.id);
-    setState((current) => ({ ...current, schedule: option.schedule }));
-    setWarnings(option.warnings);
-  };
-
-  const autoCompleteCurrentSchedule = () => {
-    clearScheduleOptions();
-    const result = autoCompleteSchedule(state);
-    setState((current) => ({ ...current, schedule: result.schedule }));
-    setWarnings(result.warnings);
-  };
-
-  const exportExcel = (mode: ExcelExportMode) => {
-    exportExcelSchedule(state, mode, weekStartDate);
-    setExcelExportModalOpen(false);
+  const exportExcel = async (mode: ExcelExportMode) => {
+    if (exportingExcel) return;
+    setExportingExcel(true);
+    try {
+      const snapshot = structuredClone(state);
+      const prepared = prepareExcelSchedule(snapshot, mode, weekStartDate);
+      if (cloudAuth?.configured && !cloudAuth.user) {
+        throw new Error("Please sign in with Google before exporting an official schedule.");
+      }
+      await completeOfficialExcelExport({
+        prepared,
+        saveHistory: cloudAuth?.configured
+          ? () => cloud.createExportHistory(weekStartDate, mode, snapshot)
+          : undefined,
+        download: downloadPreparedExcel,
+      });
+      setExcelExportModalOpen(false);
+      setWarnings([
+        {
+          type: "fallback",
+          message: cloudAuth?.configured
+            ? "History saved and Excel downloaded successfully."
+            : "Excel downloaded. Cloud History is disabled in this environment.",
+        },
+      ]);
+      if (cloudAuth?.configured) void cloud.refreshHistory();
+    } catch (error) {
+      setWarnings([
+        {
+          type: "missing",
+          message:
+            error instanceof Error
+              ? `Excel was not downloaded: ${error.message}`
+              : "Excel was not downloaded because History could not be saved.",
+        },
+      ]);
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   const importJson = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -201,8 +241,7 @@ function App() {
     try {
       const text = await file.text();
       const imported = normalizeAppState(JSON.parse(text));
-      clearScheduleOptions();
-      setState(imported);
+      replaceState(imported);
       setWarnings([{ type: "fallback", message: "JSON backup imported successfully." }]);
       setPage("schedule");
     } catch (error) {
@@ -255,6 +294,45 @@ function App() {
         </nav>
 
         <div className="sidebar-tools">
+          {cloudAuth?.configured && (
+            <div className="cloud-account">
+              {cloudAuth.user ? (
+                <>
+                  <div className="cloud-account-copy">
+                    <strong>{cloudAuth.user.name || cloudAuth.user.email || "Signed in"}</strong>
+                    <span
+                      className={`sync-status ${cloud.syncStatus}`}
+                      aria-live="polite"
+                      title={cloud.syncStatus === "error" ? cloud.errorMessage : undefined}
+                    >
+                      <i aria-hidden="true" />
+                      {cloud.syncStatus === "saving"
+                        ? "Saving changes…"
+                        : cloud.syncStatus === "error"
+                          ? `Save failed: ${cloud.errorMessage || "Unknown error"}`
+                          : cloud.syncStatus === "saved"
+                            ? "All changes saved"
+                            : "Cloud connected"}
+                    </span>
+                    {cloud.workspace && <small>{cloud.workspace.name}</small>}
+                  </div>
+                  <button className="ghost-button" onClick={() => void cloudAuth.signOut()}>
+                    <LogOut size={16} />
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="ghost-button"
+                  disabled={cloudAuth.pending}
+                  onClick={() => void cloudAuth.signIn()}
+                >
+                  <LogIn size={16} />
+                  {cloudAuth.pending ? "Checking login…" : "Sign in with Google"}
+                </button>
+              )}
+            </div>
+          )}
           <button className="ghost-button" onClick={() => exportJsonBackup(state)}>
             <FileDown size={16} />
             Export Data
@@ -293,13 +371,17 @@ function App() {
             openAddModal={() => setAddModalOpen(true)}
             openEditModal={setEditAssignment}
             onAutoComplete={autoCompleteCurrentSchedule}
-            startManualSchedule={() => {
-              clearScheduleOptions();
-              setState((current) => ({
-                ...current,
-                schedule: createEmptySchedule(),
-              }));
-            }}
+            startManualSchedule={startManualSchedule}
+          />
+        )}
+        {page === "history" && (
+          <HistoryPage
+            cloudConfigured={Boolean(cloudAuth?.configured)}
+            signedIn={Boolean(cloudAuth?.user)}
+            items={cloud.historyItems}
+            loading={cloud.historyLoading}
+            onRefresh={cloud.refreshHistory}
+            onLoadDetail={cloud.loadHistoryDetail}
           />
         )}
         {page === "employees" && (
@@ -347,6 +429,15 @@ function App() {
         <ExcelExportModal
           onClose={() => setExcelExportModalOpen(false)}
           onExport={exportExcel}
+          exporting={exportingExcel}
+        />
+      )}
+
+      {cloud.migrationRequired && cloudAuth?.user && (
+        <CloudMigrationModal
+          onImport={() => cloud.initializeCloud("import-local")}
+          onFresh={() => cloud.initializeCloud("fresh")}
+          errorMessage={cloud.errorMessage}
         />
       )}
 
@@ -356,11 +447,7 @@ function App() {
           day={selectedDay}
           onClose={() => setAddModalOpen(false)}
           onConfirm={(assignment) => {
-            clearScheduleOptions();
-            setState((current) => ({
-              ...current,
-              schedule: upsertManualShift(current.schedule, selectedDay, assignment),
-            }));
+            upsertManualAssignment(selectedDay, assignment);
             setAddModalOpen(false);
           }}
         />
@@ -372,26 +459,15 @@ function App() {
           employeeName={getEmployeeName(state, editAssignment.employeeId)}
           onClose={() => setEditAssignment(null)}
           onChangeShift={(shiftType) => {
-            clearScheduleOptions();
-            setState((current) => ({
-              ...current,
-              schedule: upsertManualShift(current.schedule, selectedDay, {
-                ...editAssignment,
-                shiftType,
-              }),
-            }));
+            changeManualAssignmentShift(
+              selectedDay,
+              editAssignment,
+              shiftType,
+            );
             setEditAssignment(null);
           }}
           onDelete={() => {
-            clearScheduleOptions();
-            setState((current) => ({
-              ...current,
-              schedule: deleteManualShift(
-                current.schedule,
-                selectedDay,
-                editAssignment.employeeId,
-              ),
-            }));
+            deleteManualAssignment(selectedDay, editAssignment.employeeId);
             setEditAssignment(null);
           }}
         />
@@ -711,45 +787,14 @@ function EmployeesPage({
       enabled,
     };
 
-    updateState((current) => ({
-      ...current,
-      employees: [...current.employees, employee],
-      availability: {
-        ...current.availability,
-        ...createDefaultAvailability([employee]),
-      },
-      preferences: {
-        ...current.preferences,
-        [employee.id]: defaultPreference(employee),
-      },
-      specialSettings: {
-        ...current.specialSettings,
-        earlyAllowedEmployeeIds: [
-          ...current.specialSettings.earlyAllowedEmployeeIds,
-          employee.id,
-        ],
-      },
-    }));
+    updateState((current) => addEmployeeToState(current, employee));
     setAddModalOpen(false);
   };
 
   const moveEmployee = (sourceId: string, targetId: string) => {
     if (sourceId === targetId) return;
 
-    updateState((current) => {
-      const sourceIndex = current.employees.findIndex((employee) => employee.id === sourceId);
-      const targetIndex = current.employees.findIndex((employee) => employee.id === targetId);
-      if (sourceIndex < 0 || targetIndex < 0) return current;
-
-      const employees = [...current.employees];
-      const [movedEmployee] = employees.splice(sourceIndex, 1);
-      employees.splice(targetIndex, 0, movedEmployee);
-
-      return {
-        ...current,
-        employees,
-      };
-    });
+    updateState((current) => moveEmployeeInState(current, sourceId, targetId));
   };
 
   return (
@@ -800,40 +845,21 @@ function EmployeesPage({
               <input
                 value={employee.name}
                 onChange={(event) =>
-                  updateState((current) => ({
-                    ...current,
-                    employees: current.employees.map((item) =>
-                      item.id === employee.id
-                        ? { ...item, name: event.target.value }
-                        : item,
-                    ),
-                  }))
+                  updateState((current) =>
+                    renameEmployeeInState(current, employee.id, event.target.value),
+                  )
                 }
               />
               <select
                 value={employee.type}
                 onChange={(event) =>
-                  updateState((current) => ({
-                    ...current,
-                    employees: current.employees.map((item) =>
-                      item.id === employee.id
-                        ? {
-                            ...item,
-                            type: event.target.value as Employee["type"],
-                          }
-                        : item,
+                  updateState((current) =>
+                    setEmployeeTypeInState(
+                      current,
+                      employee.id,
+                      event.target.value as Employee["type"],
                     ),
-                    preferences: {
-                      ...current.preferences,
-                      [employee.id]: {
-                        ...current.preferences[employee.id],
-                        maxDays:
-                          event.target.value === "casual"
-                            ? Math.min(current.preferences[employee.id]?.maxDays ?? 3, 3)
-                            : current.preferences[employee.id]?.maxDays ?? 6,
-                      },
-                    },
-                  }))
+                  )
                 }
               >
                 <option value="full-time">Formal</option>
@@ -844,14 +870,13 @@ function EmployeesPage({
                   type="checkbox"
                   checked={employee.enabled}
                   onChange={(event) =>
-                    updateState((current) => ({
-                      ...current,
-                      employees: current.employees.map((item) =>
-                        item.id === employee.id
-                          ? { ...item, enabled: event.target.checked }
-                          : item,
+                    updateState((current) =>
+                      setEmployeeEnabledInState(
+                        current,
+                        employee.id,
+                        event.target.checked,
                       ),
-                    }))
+                    )
                   }
                 />
                 Enabled
@@ -860,33 +885,7 @@ function EmployeesPage({
                 className="icon-button danger"
                 aria-label={`Delete ${employee.name}`}
                 onClick={() =>
-                  updateState((current) => {
-                    const nextAvailability = { ...current.availability };
-                    const nextPreferences = { ...current.preferences };
-                    delete nextAvailability[employee.id];
-                    delete nextPreferences[employee.id];
-                    return {
-                      ...current,
-                      employees: current.employees.filter((item) => item.id !== employee.id),
-                      availability: nextAvailability,
-                      preferences: nextPreferences,
-                      specialSettings: {
-                        ...current.specialSettings,
-                        earlyAllowedEmployeeIds:
-                          current.specialSettings.earlyAllowedEmployeeIds.filter(
-                            (id) => id !== employee.id,
-                          ),
-                      },
-                      schedule: Object.fromEntries(
-                        days.map((day) => [
-                          day,
-                          current.schedule[day].filter(
-                            (assignment) => assignment.employeeId !== employee.id,
-                          ),
-                        ]),
-                      ) as AppState["schedule"],
-                    };
-                  })
+                  updateState((current) => removeEmployeeFromState(current, employee.id))
                 }
               >
                 <Trash2 size={17} />
@@ -960,20 +959,11 @@ function AvailabilityPage({
                     type="checkbox"
                     checked={employeeAvailability[day]?.available ?? true}
                     onChange={(event) =>
-                      updateState((current) => ({
-                        ...current,
-                        availability: {
-                          ...current.availability,
-                          [selectedEmployeeId]: {
-                            ...current.availability[selectedEmployeeId],
-                            [day]: {
-                              ...(current.availability[selectedEmployeeId]?.[day] ??
-                                defaultAvailabilityEntry),
-                              available: event.target.checked,
-                            },
-                          },
-                        },
-                      }))
+                      updateState((current) =>
+                        updateAvailabilityInState(current, selectedEmployeeId, day, {
+                          available: event.target.checked,
+                        }),
+                      )
                     }
                   />
                   Available
@@ -984,20 +974,11 @@ function AvailabilityPage({
                   value={employeeAvailability[day]?.start ?? "09:45"}
                   disabled={!employeeAvailability[day]?.available}
                   onChange={(event) =>
-                    updateState((current) => ({
-                      ...current,
-                      availability: {
-                        ...current.availability,
-                        [selectedEmployeeId]: {
-                          ...current.availability[selectedEmployeeId],
-                          [day]: {
-                            ...(current.availability[selectedEmployeeId]?.[day] ??
-                              defaultAvailabilityEntry),
-                            start: event.target.value,
-                          },
-                        },
-                      },
-                    }))
+                    updateState((current) =>
+                      updateAvailabilityInState(current, selectedEmployeeId, day, {
+                        start: event.target.value,
+                      }),
+                    )
                   }
                 />
                 <input
@@ -1006,20 +987,11 @@ function AvailabilityPage({
                   value={employeeAvailability[day]?.end ?? "23:00"}
                   disabled={!employeeAvailability[day]?.available}
                   onChange={(event) =>
-                    updateState((current) => ({
-                      ...current,
-                      availability: {
-                        ...current.availability,
-                        [selectedEmployeeId]: {
-                          ...current.availability[selectedEmployeeId],
-                          [day]: {
-                            ...(current.availability[selectedEmployeeId]?.[day] ??
-                              defaultAvailabilityEntry),
-                            end: event.target.value,
-                          },
-                        },
-                      },
-                    }))
+                    updateState((current) =>
+                      updateAvailabilityInState(current, selectedEmployeeId, day, {
+                        end: event.target.value,
+                      }),
+                    )
                   }
                 />
               </div>
@@ -1056,16 +1028,9 @@ function PreferencesPage({
   }, [coworkerId, coworkers]);
 
   const updatePreference = (patch: Partial<EmployeePreference>) =>
-    updateState((current) => ({
-      ...current,
-      preferences: {
-        ...current.preferences,
-        [selectedEmployeeId]: {
-          ...current.preferences[selectedEmployeeId],
-          ...patch,
-        },
-      },
-    }));
+    updateState((current) =>
+      updatePreferenceInState(current, selectedEmployeeId, patch),
+    );
 
   if (!preference) {
     return (
@@ -1221,16 +1186,9 @@ function ShiftDemandPage({
     shiftType: ShiftType,
     template: ShiftTemplate,
   ) => {
-    updateState((current) => ({
-      ...current,
-      shiftTemplates: {
-        ...current.shiftTemplates,
-        [day]: {
-          ...current.shiftTemplates[day],
-          [shiftType]: template,
-        },
-      },
-    }));
+    updateState((current) =>
+      setShiftTemplateInState(current, day, shiftType, template),
+    );
     setEditingShiftTime(null);
   };
 
@@ -1264,16 +1222,14 @@ function ShiftDemandPage({
                           min="0"
                           value={state.shiftDemand[day][shiftType]}
                           onChange={(event) =>
-                            updateState((current) => ({
-                              ...current,
-                              shiftDemand: {
-                                ...current.shiftDemand,
-                                [day]: {
-                                  ...current.shiftDemand[day],
-                                  [shiftType]: Number(event.target.value),
-                                },
-                              },
-                            }))
+                            updateState((current) =>
+                              setShiftDemandInState(
+                                current,
+                                day,
+                                shiftType,
+                                Number(event.target.value),
+                              ),
+                            )
                           }
                         />
                         <button
@@ -1302,10 +1258,7 @@ function ShiftDemandPage({
           type="button"
           data-tooltip={defaultShiftTemplateTooltip}
           onClick={() =>
-            updateState((current) => ({
-              ...current,
-              shiftTemplates: createDefaultShiftTemplates(),
-            }))
+            updateState((current) => resetShiftTemplatesInState(current))
           }
         >
           <RotateCcw size={17} />
@@ -1422,13 +1375,9 @@ function SpecialSettingsPage({
             }`}
             data-tooltip="优先让正式员工的班型和工时更平均。"
             onClick={() =>
-              updateState((current) => ({
-                ...current,
-                specialSettings: {
-                  ...current.specialSettings,
-                  priorityMode: "balance-first",
-                },
-              }))
+              updateState((current) =>
+                setPriorityModeInState(current, "balance-first"),
+              )
             }
           >
             Balance First
@@ -1439,13 +1388,9 @@ function SpecialSettingsPage({
             }`}
             data-tooltip="优先满足员工之间的绑定关系。"
             onClick={() =>
-              updateState((current) => ({
-                ...current,
-                specialSettings: {
-                  ...current.specialSettings,
-                  priorityMode: "binding-first",
-                },
-              }))
+              updateState((current) =>
+                setPriorityModeInState(current, "binding-first"),
+              )
             }
           >
             Binding First
@@ -1456,13 +1401,9 @@ function SpecialSettingsPage({
             }`}
             data-tooltip="优先保证员工达到设置的最低工作天数，之后再考虑绑定关系、班型平衡和工时平衡。"
             onClick={() =>
-              updateState((current) => ({
-                ...current,
-                specialSettings: {
-                  ...current.specialSettings,
-                  priorityMode: "work-day-first",
-                },
-              }))
+              updateState((current) =>
+                setPriorityModeInState(current, "work-day-first"),
+              )
             }
           >
             Work-day First
@@ -1485,13 +1426,9 @@ function SpecialSettingsPage({
               type="checkbox"
               checked={state.specialSettings.shiftTypeCapEnabled}
               onChange={(event) =>
-                updateState((current) => ({
-                  ...current,
-                  specialSettings: {
-                    ...current.specialSettings,
-                    shiftTypeCapEnabled: event.target.checked,
-                  },
-                }))
+                updateState((current) =>
+                  setShiftTypeCapEnabledInState(current, event.target.checked),
+                )
               }
             />
             <span>班型上限保护</span>
@@ -1508,20 +1445,13 @@ function SpecialSettingsPage({
                 type="checkbox"
                 checked={allowed.has(employee.id)}
                 onChange={(event) =>
-                  updateState((current) => ({
-                    ...current,
-                    specialSettings: {
-                      ...current.specialSettings,
-                      earlyAllowedEmployeeIds: event.target.checked
-                        ? [
-                            ...current.specialSettings.earlyAllowedEmployeeIds,
-                            employee.id,
-                          ]
-                        : current.specialSettings.earlyAllowedEmployeeIds.filter(
-                            (id) => id !== employee.id,
-                          ),
-                    },
-                  }))
+                  updateState((current) =>
+                    setEarlyShiftAllowedInState(
+                      current,
+                      employee.id,
+                      event.target.checked,
+                    ),
+                  )
                 }
               />
               <span>{employee.name}</span>
@@ -1827,12 +1757,249 @@ function WarningsModal({
   );
 }
 
+function HistoryPage({
+  cloudConfigured,
+  signedIn,
+  items,
+  loading,
+  onRefresh,
+  onLoadDetail,
+}: {
+  cloudConfigured: boolean;
+  signedIn: boolean;
+  items: HistoryListItem[];
+  loading: boolean;
+  onRefresh: () => Promise<HistoryListItem[]>;
+  onLoadDetail: (historyId: string) => Promise<HistoryDetail>;
+}) {
+  const [detail, setDetail] = useState<HistoryDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!signedIn) return;
+    void onRefresh().catch((refreshError) => {
+      setError(refreshError instanceof Error ? refreshError.message : "Unable to load History.");
+    });
+  }, [onRefresh, signedIn]);
+
+  const openDetail = async (historyId: string) => {
+    setDetailLoading(true);
+    setError("");
+    try {
+      setDetail(await onLoadDetail(historyId));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load History.");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const downloadHistoryExcel = () => {
+    if (!detail) return;
+    const [year, month, day] = detail.weekStart.split("-").map(Number);
+    const snapshot: AppState = {
+      ...detail.settingsSnapshot,
+      schedule: detail.scheduleSnapshot.schedule,
+    };
+    downloadPreparedExcel(
+      prepareExcelSchedule(snapshot, detail.format, new Date(year, month - 1, day)),
+    );
+  };
+
+  const detailTotalHours = detail?.stats.reduce((sum, stat) => sum + stat.totalHours, 0) ?? 0;
+  const detailEmployeeCount = detail?.stats.filter((stat) => stat.workDays > 0).length ?? 0;
+
+  if (!cloudConfigured) {
+    return (
+      <section>
+        <PageHeader title="History" subtitle="History is available when Neon cloud sync is configured." />
+        <div className="empty-state panel">Cloud History is disabled in this environment.</div>
+      </section>
+    );
+  }
+
+  if (!signedIn) {
+    return (
+      <section>
+        <PageHeader title="History" subtitle="Sign in with Google to view exported schedules." />
+        <div className="empty-state panel">Sign in from the sidebar to load History.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <PageHeader
+        title="History"
+        subtitle="A record is created only after an official Excel export is confirmed."
+        actions={
+          <button className="secondary-button" disabled={loading} onClick={() => void onRefresh()}>
+            <RotateCcw size={17} />
+            Refresh
+          </button>
+        }
+      />
+
+      {error && <div className="cloud-error-banner">{error}</div>}
+
+      <div className="history-layout">
+        <div className="panel history-list-panel">
+          <div className="panel-title"><h2>Excel Exports</h2></div>
+          {loading && items.length === 0 ? (
+            <div className="empty-state">Loading History…</div>
+          ) : items.length === 0 ? (
+            <div className="empty-state">No exported schedules yet.</div>
+          ) : (
+            <div className="history-list">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  className={detail?.id === item.id ? "history-item active" : "history-item"}
+                  onClick={() => void openDetail(item.id)}
+                >
+                  <strong>{item.weekStart} — {item.weekEnd}</strong>
+                  <span>Revision {item.revision} · {item.format} · {item.assignmentCount} shifts</span>
+                  <time>{new Date(item.createdAt).toLocaleString()}</time>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="history-detail-stack">
+          {detailLoading ? (
+            <div className="panel empty-state">Loading schedule snapshot…</div>
+          ) : detail ? (
+            <>
+              <div className="panel">
+                <div className="panel-title history-detail-title">
+                  <div>
+                    <h2>{detail.weekStart} — {detail.weekEnd}</h2>
+                    <p>Saved {new Date(detail.createdAt).toLocaleString()}</p>
+                  </div>
+                  <button className="secondary-button" onClick={downloadHistoryExcel}>
+                    <Download size={17} />
+                    Download again
+                  </button>
+                </div>
+                <div className="history-summary-grid">
+                  <div className="history-summary-card">
+                    <span>Export</span>
+                    <strong>Revision {detail.revision}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Format</span>
+                    <strong>{detail.format === "general" ? "General" : "Chapanda"}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Shifts / employees</span>
+                    <strong>{detail.assignmentCount} / {detailEmployeeCount}</strong>
+                  </div>
+                  <div className="history-summary-card">
+                    <span>Total hours</span>
+                    <strong>{formatNumber(detailTotalHours)}</strong>
+                  </div>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th><th>Day</th><th>Employee</th><th>Shift</th><th>Time</th><th>Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.assignments.map((assignment) => (
+                        <tr key={`${assignment.workDate}-${assignment.employeeId}`}>
+                          <td>{assignment.workDate}</td>
+                          <td>{assignment.day}</td>
+                          <td>{assignment.employeeName}</td>
+                          <td>{shiftLabels[assignment.shiftType]}</td>
+                          <td>{assignment.startTime}-{assignment.endTime}</td>
+                          <td>{formatNumber(assignment.calculatedHours)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <StatsTable stats={detail.stats} />
+            </>
+          ) : (
+            <div className="panel empty-state">Select an export to view its immutable snapshot.</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CloudMigrationModal({
+  onImport,
+  onFresh,
+  errorMessage,
+}: {
+  onImport: () => Promise<void> | void;
+  onFresh: () => Promise<void> | void;
+  errorMessage: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = async (action: () => Promise<void> | void) => {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal cloud-migration-modal" role="dialog" aria-modal="true" aria-label="First cloud setup">
+        <div className="modal-header migration-header">
+          <div className="migration-title">
+            <span><Cloud size={15} /> Neon cloud sync</span>
+            <h2>Set up your workspace</h2>
+          </div>
+        </div>
+        <div className="migration-body">
+          <p>
+            Choose how to initialise this workspace. Your saved configuration will sync automatically
+            after setup.
+          </p>
+          <div className="migration-points">
+            <div>
+              <Database size={18} />
+              <span><strong>Import this browser</strong> keeps your employees, availability and roster settings.</span>
+            </div>
+            <div>
+              <History size={18} />
+              <span><strong>Your current schedule stays local</strong> and is only added to History after an Excel export.</span>
+            </div>
+          </div>
+          {errorMessage && <div className="cloud-error-banner">{errorMessage}</div>}
+          <div className="modal-actions migration-actions">
+            <button className="secondary-button" disabled={busy} onClick={() => void run(onFresh)}>
+              Start with defaults
+            </button>
+            <button className="primary-button" disabled={busy} onClick={() => void run(onImport)}>
+              {busy ? "Importing…" : "Import this browser"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExcelExportModal({
   onClose,
   onExport,
+  exporting,
 }: {
   onClose: () => void;
-  onExport: (mode: ExcelExportMode) => void;
+  onExport: (mode: ExcelExportMode) => Promise<void> | void;
+  exporting: boolean;
 }) {
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -1843,14 +2010,15 @@ function ExcelExportModal({
         aria-label="Choose Excel export format"
         onClick={(event) => event.stopPropagation()}
       >
-        <button className="excel-format-button" onClick={() => onExport("general")}>
-          General
+        <button className="excel-format-button" disabled={exporting} onClick={() => void onExport("general")}>
+          {exporting ? "Saving History…" : "General"}
         </button>
         <button
           className="excel-format-button chapanda"
-          onClick={() => onExport("chapanda")}
+          disabled={exporting}
+          onClick={() => void onExport("chapanda")}
         >
-          Chapanda
+          {exporting ? "Please wait…" : "Chapanda"}
         </button>
       </div>
     </div>
@@ -1882,4 +2050,3 @@ function Modal({
 }
 
 export default App;
-
