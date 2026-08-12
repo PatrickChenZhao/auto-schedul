@@ -42,7 +42,11 @@ import {
   exportJsonBackup,
   prepareExcelSchedule,
 } from "./exporters";
-import type { HistoryDetail, HistoryListItem } from "./cloud/contracts";
+import {
+  HISTORY_RETENTION_LIMIT,
+  type HistoryDetail,
+  type HistoryListItem,
+} from "./cloud/contracts";
 import { calculateEmployeeStats } from "./stats";
 import { normalizeAppState } from "./persistence/normalizeAppState";
 import {
@@ -382,6 +386,7 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
             loading={cloud.historyLoading}
             onRefresh={cloud.refreshHistory}
             onLoadDetail={cloud.loadHistoryDetail}
+            onDelete={cloud.removeHistory}
           />
         )}
         {page === "employees" && (
@@ -1764,6 +1769,7 @@ function HistoryPage({
   loading,
   onRefresh,
   onLoadDetail,
+  onDelete,
 }: {
   cloudConfigured: boolean;
   signedIn: boolean;
@@ -1771,9 +1777,12 @@ function HistoryPage({
   loading: boolean;
   onRefresh: () => Promise<HistoryListItem[]>;
   onLoadDetail: (historyId: string) => Promise<HistoryDetail>;
+  onDelete: (historyId: string) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<HistoryDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<HistoryDetail | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1807,6 +1816,21 @@ function HistoryPage({
     );
   };
 
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await onDelete(deleteTarget.id);
+      if (detail?.id === deleteTarget.id) setDetail(null);
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete History.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const detailTotalHours = detail?.stats.reduce((sum, stat) => sum + stat.totalHours, 0) ?? 0;
   const detailEmployeeCount = detail?.stats.filter((stat) => stat.workDays > 0).length ?? 0;
 
@@ -1832,7 +1856,7 @@ function HistoryPage({
     <section>
       <PageHeader
         title="History"
-        subtitle="A record is created only after an official Excel export is confirmed."
+        subtitle={`A record is created after an official Excel export. The newest ${HISTORY_RETENTION_LIMIT} records are retained.`}
         actions={
           <button className="secondary-button" disabled={loading} onClick={() => void onRefresh()}>
             <RotateCcw size={17} />
@@ -1878,6 +1902,14 @@ function HistoryPage({
                     <h2>{detail.weekStart} — {detail.weekEnd}</h2>
                     <p>Saved {new Date(detail.createdAt).toLocaleString()}</p>
                   </div>
+                  <button
+                    className="delete-button"
+                    disabled={deleting}
+                    onClick={() => setDeleteTarget(detail)}
+                  >
+                    <Trash2 size={17} />
+                    Delete
+                  </button>
                   <button className="secondary-button" onClick={downloadHistoryExcel}>
                     <Download size={17} />
                     Download again
@@ -1930,6 +1962,33 @@ function HistoryPage({
           )}
         </div>
       </div>
+      {deleteTarget && (
+        <Modal title="Delete History Record" onClose={() => !deleting && setDeleteTarget(null)}>
+          <div className="modal-form">
+            <p>
+              Delete the export for {deleteTarget.weekStart} — {deleteTarget.weekEnd}? This also
+              permanently deletes its saved shifts from the database.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="secondary-button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="delete-button"
+                disabled={deleting}
+                onClick={() => void confirmDelete()}
+              >
+                <Trash2 size={17} />
+                {deleting ? "Deleting…" : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }

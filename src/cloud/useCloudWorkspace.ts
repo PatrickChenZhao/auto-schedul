@@ -13,6 +13,7 @@ import type { ExcelExportMode } from "../exporters";
 import type { CloudAuthState } from "../App";
 import {
   bootstrapCloudWorkspace,
+  deleteHistoryRecord,
   fetchHistory,
   fetchHistoryDetail,
   saveCloudConfiguration,
@@ -240,6 +241,15 @@ export const useCloudWorkspace = ({
     [workspace],
   );
 
+  const removeHistory = useCallback(
+    async (historyId: string) => {
+      if (!workspace) throw new Error("Cloud workspace is not ready.");
+      await deleteHistoryRecord(workspace.id, historyId);
+      setHistoryItems((current) => current.filter((item) => item.id !== historyId));
+    },
+    [workspace],
+  );
+
   return {
     cloudStatus,
     syncStatus,
@@ -253,5 +263,6 @@ export const useCloudWorkspace = ({
     historyLoading,
     refreshHistory,
     loadHistoryDetail,
+    removeHistory,
   };
 };

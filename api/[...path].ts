@@ -3,6 +3,7 @@ import { authenticateRequest } from "../server/auth.js";
 import { json, readJson, toErrorResponse } from "../server/http.js";
 import {
   createHistoryRequestSchema,
+  HISTORY_RETENTION_LIMIT,
   saveConfigurationRequestSchema,
 } from "../src/cloud/contracts.js";
 import {
@@ -11,6 +12,7 @@ import {
 } from "../server/services/configuration.js";
 import {
   createHistoryFromExcelExport,
+  deleteHistory,
   getHistoryDetail,
   listHistory,
 } from "../server/services/history.js";
@@ -87,14 +89,23 @@ const handler = async (request: Request): Promise<Response> => {
 
     if (route.resource === "history" && !route.resourceId && request.method === "GET") {
       await requireWorkspaceAccess(user.id, route.workspaceId);
-      const requestedLimit = Number(searchParams.get("limit") ?? "50");
-      const limit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
+      const requestedLimit = Number(
+        searchParams.get("limit") ?? String(HISTORY_RETENTION_LIMIT),
+      );
+      const limit = Number.isFinite(requestedLimit)
+        ? requestedLimit
+        : HISTORY_RETENTION_LIMIT;
       return json({ items: await listHistory(route.workspaceId, limit) });
     }
 
     if (route.resource === "history" && route.resourceId && request.method === "GET") {
       await requireWorkspaceAccess(user.id, route.workspaceId);
       return json(await getHistoryDetail(route.workspaceId, route.resourceId));
+    }
+
+    if (route.resource === "history" && route.resourceId && request.method === "DELETE") {
+      await requireWorkspaceAccess(user.id, route.workspaceId, true);
+      return json(await deleteHistory(route.workspaceId, route.resourceId));
     }
 
     return json({ error: "API route not found." }, { status: 404 });
