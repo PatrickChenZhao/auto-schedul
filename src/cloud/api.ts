@@ -90,3 +90,9 @@ export const fetchHistoryDetail = (workspaceId: string, historyId: string) =>
   request<HistoryDetail>(
     `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}&historyId=${encodeURIComponent(historyId)}`,
   );
+
+export const deleteHistoryRecord = (workspaceId: string, historyId: string) =>
+  request<{ id: string; deleted: true }>(
+    `/api/cloud?action=history&workspaceId=${encodeURIComponent(workspaceId)}&historyId=${encodeURIComponent(historyId)}`,
+    { method: "DELETE" },
+  );

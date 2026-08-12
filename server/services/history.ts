@@ -4,6 +4,7 @@ import type {
   HistoryDetail,
   HistoryListItem,
 } from "../../src/cloud/contracts.js";
+import { HISTORY_RETENTION_LIMIT } from "../../src/cloud/contracts.js";
 import type { AppSettings, Day, EmployeeStats, WeeklySchedule } from "../../src/types.js";
 import { days } from "../../src/types.js";
 import { db, neonSql } from "../db/client.js";
@@ -75,14 +76,14 @@ export const createHistoryFromExcelExport = async ({
   await neonSql.transaction([
     neonSql`
       select pg_advisory_xact_lock(
-        hashtextextended(${workspaceId} || ':' || ${weekStart}, 0)
+        hashtextextended(${workspaceId}, 0)
       )
     `,
     neonSql`
       insert into schedules (
         id, workspace_id, week_start, week_end, schedule_snapshot,
         settings_snapshot, history_trigger, export_format, revision,
-        idempotency_key, created_by
+        idempotency_key, created_at, created_by
       ) values (
         ${scheduleId}, ${workspaceId}, ${weekStart}::date, ${weekEnd}::date,
         ${JSON.stringify(scheduleSnapshot)}::jsonb,
@@ -93,7 +94,7 @@ export const createHistoryFromExcelExport = async ({
           from schedules
           where workspace_id = ${workspaceId} and week_start = ${weekStart}::date
         ),
-        ${idempotencyKey}::uuid, ${userId}
+        ${idempotencyKey}::uuid, clock_timestamp(), ${userId}
       )
       on conflict (workspace_id, idempotency_key) do nothing
     `,
@@ -112,6 +113,17 @@ export const createHistoryFromExcelExport = async ({
       )
       where exists (select 1 from schedules where id = ${scheduleId})
     `,
+    neonSql`
+      delete from schedules
+      where workspace_id = ${workspaceId}
+        and id in (
+          select id
+          from schedules
+          where workspace_id = ${workspaceId}
+          order by created_at desc, id desc
+          offset ${HISTORY_RETENTION_LIMIT}
+        )
+    `,
   ]);
 
   const savedRows = await db
@@ -129,9 +141,22 @@ export const createHistoryFromExcelExport = async ({
   return { id: saved.id, revision: saved.revision, created: saved.id === scheduleId };
 };
 
+export const deleteHistory = async (workspaceId: string, scheduleId: string) => {
+  const deletedRows = await db
+    .delete(schedules)
+    .where(and(eq(schedules.id, scheduleId), eq(schedules.workspaceId, workspaceId)))
+    .returning({ id: schedules.id });
+
+  if (!deletedRows[0]) {
+    throw new Response("History record not found.", { status: 404 });
+  }
+
+  return { id: deletedRows[0].id, deleted: true as const };
+};
+
 export const listHistory = async (
   workspaceId: string,
-  limit = 50,
+  limit = HISTORY_RETENTION_LIMIT,
 ): Promise<HistoryListItem[]> => {
   const rows = await db
     .select({

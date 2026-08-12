@@ -125,6 +125,8 @@ export type SaveConfigurationResponse = {
   updatedAt: string;
 };
 
+export const HISTORY_RETENTION_LIMIT = 100;
+
 export type HistoryListItem = {
   id: string;
   weekStart: string;

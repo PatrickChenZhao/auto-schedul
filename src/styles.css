@@ -138,6 +138,12 @@
 
 .history-detail-title {
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-detail-title > div:first-child {
+  margin-right: auto;
 }
 
 .history-detail-title p {
@@ -836,6 +842,11 @@ th {
 .delete-button {
   background: #fdecec;
   color: #a82929;
+}
+
+.delete-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .drag-handle {
