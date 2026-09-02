@@ -4,6 +4,7 @@ import {
   autoCompleteScheduleFrom,
   deleteManualShift,
   generateWeeklyScheduleOptions,
+  internalSchedulerFeatureFlags,
   upsertManualShift,
 } from "./scheduler";
 import { WeeklySchedule, days, shiftTypes } from "./types";
@@ -147,7 +148,7 @@ describe("internal named-employee soft constraint", () => {
     return { state, zhaoChen, sunFeiyu, otherEmployee };
   };
 
-  it("slightly prefers scheduling 赵宸 and 孙菲雨 on the same day", () => {
+  it("prefers scheduling 赵宸 and 孙菲雨 on the same day", () => {
     const { state, sunFeiyu } = createNamedPairState();
 
     const result = autoCompleteScheduleFrom(state, state.schedule);
@@ -169,5 +170,116 @@ describe("internal named-employee soft constraint", () => {
       shiftType: "mid",
     });
     expect(result.warnings).toEqual([]);
+  });
+
+  it("repeatedly repairs a generated schedule with feasible cross-day swaps", () => {
+    const { state, zhaoChen, sunFeiyu, otherEmployee } = createNamedPairState();
+    state.shiftDemand.Tuesday.early = 1;
+    state.shiftDemand.Wednesday.mid = 1;
+    state.shiftDemand.Thursday.early = 1;
+    state.shiftDemand.Thursday.mid = 1;
+    (["Tuesday", "Wednesday", "Thursday"] as const).forEach((day) => {
+      state.availability[sunFeiyu.id][day] = {
+        available: true,
+        start: "09:45",
+        end: "23:00",
+      };
+      state.availability[otherEmployee.id][day] = {
+        available: true,
+        start: "09:45",
+        end: "23:00",
+      };
+    });
+    state.availability[zhaoChen.id].Thursday = {
+      available: true,
+      start: "09:45",
+      end: "23:00",
+    };
+    state.schedule = upsertManualShift(createEmptySchedule(), "Monday", {
+      employeeId: zhaoChen.id,
+      shiftType: "early",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Monday", {
+      employeeId: otherEmployee.id,
+      shiftType: "mid",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Tuesday", {
+      employeeId: sunFeiyu.id,
+      shiftType: "early",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Wednesday", {
+      employeeId: sunFeiyu.id,
+      shiftType: "mid",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Thursday", {
+      employeeId: zhaoChen.id,
+      shiftType: "early",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Thursday", {
+      employeeId: otherEmployee.id,
+      shiftType: "mid",
+    });
+
+    const result = autoCompleteScheduleFrom(state, state.schedule);
+
+    expect(result.schedule.Monday).toContainEqual({
+      employeeId: sunFeiyu.id,
+      shiftType: "mid",
+    });
+    expect(result.schedule.Tuesday).toContainEqual({
+      employeeId: otherEmployee.id,
+      shiftType: "early",
+    });
+    expect(result.schedule.Thursday).toContainEqual({
+      employeeId: sunFeiyu.id,
+      shiftType: "mid",
+    });
+    expect(result.schedule.Wednesday).toContainEqual({
+      employeeId: otherEmployee.id,
+      shiftType: "mid",
+    });
+  });
+
+  it("disables the named-pair repair when the internal feature flag is false", () => {
+    const { state, zhaoChen, sunFeiyu, otherEmployee } = createNamedPairState();
+    state.shiftDemand.Tuesday.early = 1;
+    state.availability[sunFeiyu.id].Tuesday = {
+      available: true,
+      start: "09:45",
+      end: "23:00",
+    };
+    state.availability[otherEmployee.id].Tuesday = {
+      available: true,
+      start: "09:45",
+      end: "23:00",
+    };
+    state.schedule = upsertManualShift(createEmptySchedule(), "Monday", {
+      employeeId: zhaoChen.id,
+      shiftType: "early",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Monday", {
+      employeeId: otherEmployee.id,
+      shiftType: "mid",
+    });
+    state.schedule = upsertManualShift(state.schedule, "Tuesday", {
+      employeeId: sunFeiyu.id,
+      shiftType: "early",
+    });
+
+    internalSchedulerFeatureFlags.preferZhaoChenAndSunFeiyuSameDay = false;
+    try {
+      const result = autoCompleteScheduleFrom(state, state.schedule);
+
+      expect(result.schedule.Monday).toContainEqual({
+        employeeId: otherEmployee.id,
+        shiftType: "mid",
+      });
+      expect(result.schedule.Tuesday).toContainEqual({
+        employeeId: sunFeiyu.id,
+        shiftType: "early",
+      });
+    } finally {
+      internalSchedulerFeatureFlags.preferZhaoChenAndSunFeiyuSameDay = true;
+    }
   });
 });

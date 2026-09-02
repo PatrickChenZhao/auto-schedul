@@ -51,12 +51,12 @@ const rebalanceDays: Day[] = [
 const maxSameShiftTypePerWeek = 3;
 
 // Internal-only feature flags. These are intentionally not exposed in AppState or the UI.
-const internalSchedulerFeatureFlags = {
+export const internalSchedulerFeatureFlags = {
   preferZhaoChenAndSunFeiyuSameDay: true,
 };
 
 const preferredSameDayEmployeeNames = ["赵宸", "孙菲雨"] as const;
-const preferredSameDayPenaltyPerUnpairedDay = 5;
+const preferredSameDayPenaltyPerZhaoChenOnlyDay = 240;
 
 const autoCompleteDayLabels: Record<Day, string> = {
   Monday: "星期一",
@@ -863,14 +863,14 @@ const getPreferredSameDayPenalty = (
   const pair = getPreferredSameDayPair(state);
   if (!pair) return 0;
 
-  const [firstEmployee, secondEmployee] = pair;
-  const unpairedDayCount = days.filter(
+  const [zhaoChen, sunFeiyu] = pair;
+  const zhaoChenOnlyDayCount = days.filter(
     (day) =>
-      alreadyScheduled(schedule, firstEmployee.id, day) !==
-      alreadyScheduled(schedule, secondEmployee.id, day),
+      alreadyScheduled(schedule, zhaoChen.id, day) &&
+      !alreadyScheduled(schedule, sunFeiyu.id, day),
   ).length;
 
-  return unpairedDayCount * preferredSameDayPenaltyPerUnpairedDay;
+  return zhaoChenOnlyDayCount * preferredSameDayPenaltyPerZhaoChenOnlyDay;
 };
 
 const scoreSchedule = (
@@ -965,6 +965,110 @@ const scoreSchedule = (
   );
 };
 
+const repairPreferredSameDayPair = (context: EngineContext) => {
+  const pair = getPreferredSameDayPair(context.state);
+  if (!pair) return;
+
+  const [zhaoChen, sunFeiyu] = pair;
+  const employeeById = new Map(
+    context.state.employees.map((employee) => [employee.id, employee]),
+  );
+  let changed = false;
+
+  for (let pass = 0; pass < days.length; pass += 1) {
+    const zhaoChenOnlyDays = days.filter(
+      (day) =>
+        alreadyScheduled(context.schedule, zhaoChen.id, day) &&
+        !alreadyScheduled(context.schedule, sunFeiyu.id, day),
+    );
+    const sunFeiyuOnlyDays = days.filter(
+      (day) =>
+        alreadyScheduled(context.schedule, sunFeiyu.id, day) &&
+        !alreadyScheduled(context.schedule, zhaoChen.id, day),
+    );
+    let bestSchedule: WeeklySchedule | null = null;
+    let bestScore = scoreSchedule(
+      context.state,
+      context.schedule,
+      context.warnings,
+    );
+
+    zhaoChenOnlyDays.forEach((targetDay) => {
+      const targetAssignments = context.schedule[targetDay].filter(
+        (assignment) =>
+          assignment.employeeId !== zhaoChen.id &&
+          assignment.employeeId !== sunFeiyu.id,
+      );
+
+      sunFeiyuOnlyDays.forEach((sourceDay) => {
+        const sunFeiyuAssignment = context.schedule[sourceDay].find(
+          (assignment) => assignment.employeeId === sunFeiyu.id,
+        );
+        if (!sunFeiyuAssignment) return;
+
+        targetAssignments.forEach((targetAssignment) => {
+          const replacementEmployee = employeeById.get(
+            targetAssignment.employeeId,
+          );
+          if (
+            !replacementEmployee ||
+            alreadyScheduled(
+              context.schedule,
+              replacementEmployee.id,
+              sourceDay,
+            ) ||
+            !canWorkShift(
+              context.state,
+              sunFeiyu,
+              targetDay,
+              targetAssignment.shiftType,
+            ) ||
+            !canWorkShift(
+              context.state,
+              replacementEmployee,
+              sourceDay,
+              sunFeiyuAssignment.shiftType,
+            )
+          ) {
+            return;
+          }
+
+          const candidateSchedule = cloneSchedule(context.schedule);
+          const candidateTargetAssignment = candidateSchedule[targetDay].find(
+            (assignment) =>
+              assignment.employeeId === replacementEmployee.id,
+          );
+          const candidateSourceAssignment = candidateSchedule[sourceDay].find(
+            (assignment) => assignment.employeeId === sunFeiyu.id,
+          );
+          if (!candidateTargetAssignment || !candidateSourceAssignment) return;
+
+          candidateTargetAssignment.employeeId = sunFeiyu.id;
+          candidateSourceAssignment.employeeId = replacementEmployee.id;
+
+          if (hasShiftTypeCapViolation(context.state, candidateSchedule)) return;
+
+          const candidateScore = scoreSchedule(
+            context.state,
+            candidateSchedule,
+            context.warnings,
+          );
+          if (candidateScore < bestScore) {
+            bestScore = candidateScore;
+            bestSchedule = candidateSchedule;
+          }
+        });
+      });
+    });
+
+    if (!bestSchedule) break;
+    context.schedule = bestSchedule;
+    changed = true;
+  }
+
+  if (changed) recalculateContextMetrics(context);
+};
+
 const createScheduleSignature = (schedule: WeeklySchedule) =>
   days
     .map((day) =>
@@ -985,6 +1089,7 @@ const generateScheduleWithSelector = (
   });
 
   rebalanceBoundCoworkerShifts(context);
+  repairPreferredSameDayPair(context);
   addMinimumDayWarnings(context);
   sortSchedule(context.schedule);
 
@@ -1039,6 +1144,7 @@ export const autoCompleteScheduleFrom = (
     days.forEach((day) => fillShift(context, day, shiftType, createVariantSelector(0)));
   });
 
+  repairPreferredSameDayPair(context);
   sortSchedule(context.schedule);
 
   const missingWarnings = days.flatMap((day) =>
