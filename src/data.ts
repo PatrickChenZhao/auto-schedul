@@ -1,15 +1,16 @@
-import {
+import { days } from "./types.js";
+import type {
   AppState,
   AvailabilityEntry,
   Day,
   Employee,
   EmployeePreference,
+  ShiftAssignment,
   ShiftDemand,
   ShiftTemplateMap,
   ShiftType,
   WeeklySchedule,
-  days,
-} from "./types";
+} from "./types.js";
 
 export const shiftLabels: Record<ShiftType, string> = {
   early: "Early",
@@ -40,7 +41,7 @@ export const additionalShiftTimes = [
 
 export const getAssignmentTemplate = (
   day: Day,
-  assignment: import("./types").ShiftAssignment,
+  assignment: ShiftAssignment,
   shiftTemplates: ShiftTemplateMap = defaultShiftTemplates,
 ) => {
   if (assignment.addTime) {
