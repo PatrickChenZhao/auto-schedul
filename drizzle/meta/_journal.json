@@ -15,6 +15,13 @@
       "when": 1786487706218,
       "tag": "0001_lying_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790851243488,
+      "tag": "0002_slippery_iron_monger",
+      "breakpoints": true
     }
   ]
 }

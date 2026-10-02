@@ -12,7 +12,7 @@ export const minutesToTime = (minutes: number) => {
 export const getHoursBetween = (start: string, end: string) =>
   (timeToMinutes(end) - timeToMinutes(start)) / 60;
 
-export const timelineStart = "09:45";
+export const timelineStart = "09:30";
 export const timelineEnd = "23:00";
 export const timelineStepMinutes = 15;
 

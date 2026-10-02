@@ -53,9 +53,12 @@ const maxSameShiftTypePerWeek = 3;
 // Internal-only feature flags. These are intentionally not exposed in AppState or the UI.
 export const internalSchedulerFeatureFlags = {
   preferZhaoChenAndSunFeiyuSameDay: true,
+  prioritizeZhaoChenMondayShift: true,
+  excludeZhaoChenAndXuJiachengSameDayOptions: true,
 };
 
 const preferredSameDayEmployeeNames = ["赵宸", "孙菲雨"] as const;
+const excludedSameDayEmployeeNames = ["赵宸", "徐嘉程"] as const;
 const preferredSameDayPenaltyPerZhaoChenOnlyDay = 240;
 
 const autoCompleteDayLabels: Record<Day, string> = {
@@ -163,6 +166,18 @@ const getPreferredSameDayCandidateRank = (
     : 1;
 };
 
+const isPrioritizedMondayCandidate = (
+  context: EngineContext,
+  employee: Employee,
+  day: Day,
+  shiftType: ShiftType,
+) =>
+  internalSchedulerFeatureFlags.prioritizeZhaoChenMondayShift &&
+  day === "Monday" &&
+  shiftType !== "early" &&
+  employee.enabled &&
+  employee.name.trim() === "赵宸";
+
 const usesBindingFirst = (state: SchedulingInput) =>
   state.specialSettings.priorityMode === "binding-first" ||
   state.specialSettings.priorityMode === "work-day-first";
@@ -264,12 +279,21 @@ const scoreCandidate = (
     employee,
     day,
   );
+  const mondayPriorityRank = isPrioritizedMondayCandidate(
+    context,
+    employee,
+    day,
+    shiftType,
+  )
+    ? 0
+    : 1;
   const priorityRanks = usesBindingFirst(context.state)
       ? [coworkerBindingRank, fullTimeBalanceRank, fullTimeHoursRank]
       : [fullTimeBalanceRank, fullTimeHoursRank, coworkerBindingRank];
 
   if (context.state.specialSettings.priorityMode === "work-day-first") {
     return [
+      mondayPriorityRank,
       typeRank,
       needsMinimum,
       ...priorityRanks,
@@ -281,6 +305,7 @@ const scoreCandidate = (
   }
 
   return [
+    mondayPriorityRank,
     typeRank,
     ...priorityRanks,
     needsMinimum,
@@ -318,7 +343,11 @@ const getCandidates = (
   const filteredCandidates =
     context.state.specialSettings.priorityMode === "work-day-first" &&
     candidates.some((employee) => isBelowMinimumDays(context, employee))
-      ? candidates.filter((employee) => isBelowMinimumDays(context, employee))
+      ? candidates.filter(
+          (employee) =>
+            isBelowMinimumDays(context, employee) ||
+            isPrioritizedMondayCandidate(context, employee, day, shiftType),
+        )
       : candidates;
 
   return filteredCandidates.sort((left, right) =>
@@ -846,6 +875,11 @@ const createVariantSelector = (variantSeed: number): CandidateSelector => {
   }
 
   return (context, day, shiftType, candidates, assignedInShift) => {
+    const mondayPriorityCandidate = candidates.find((employee) =>
+      isPrioritizedMondayCandidate(context, employee, day, shiftType),
+    );
+    if (mondayPriorityCandidate) return mondayPriorityCandidate;
+
     const choiceCount = Math.min(candidates.length, 4);
     const dayRank = days.indexOf(day) + 1;
     const shiftRank = shiftTypes.indexOf(shiftType) + 1;
@@ -1079,6 +1113,27 @@ const createScheduleSignature = (schedule: WeeklySchedule) =>
     )
     .join("|");
 
+export const hasExcludedSameDayPair = (
+  state: SchedulingInput,
+  schedule: WeeklySchedule,
+) => {
+  if (!internalSchedulerFeatureFlags.excludeZhaoChenAndXuJiachengSameDayOptions) {
+    return false;
+  }
+
+  const pair = excludedSameDayEmployeeNames.map((name) =>
+    state.employees.find((employee) => employee.name.trim() === name),
+  );
+  const [zhaoChen, xuJiacheng] = pair;
+  if (!zhaoChen || !xuJiacheng) return false;
+
+  return days.some(
+    (day) =>
+      alreadyScheduled(schedule, zhaoChen.id, day) &&
+      alreadyScheduled(schedule, xuJiacheng.id, day),
+  );
+};
+
 const generateScheduleWithSelector = (
   state: SchedulingInput,
   selectCandidate: CandidateSelector,
@@ -1109,6 +1164,8 @@ export const generateWeeklyScheduleOptions = (
 
   for (let seed = 0; seed < 60 && candidates.length < optionCount * 4; seed += 1) {
     const result = generateScheduleWithSelector(state, createVariantSelector(seed));
+    if (hasExcludedSameDayPair(state, result.schedule)) continue;
+
     const signature = createScheduleSignature(result.schedule);
     if (seen.has(signature)) continue;
     seen.add(signature);

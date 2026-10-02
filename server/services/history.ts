@@ -26,6 +26,7 @@ const buildStats = (
     workDays: 0,
     earlyCount: 0,
     midCount: 0,
+    addCount: 0,
     lateCount: 0,
   }));
   const byEmployee = new Map(stats.map((stat) => [stat.employeeId, stat]));
@@ -34,9 +35,14 @@ const buildStats = (
     if (!stat) continue;
     stat.totalHours += assignment.calculatedHours;
     stat.workDays += 1;
-    stat[`${assignment.shiftType}Count`] += 1;
+    if (assignment.isAdd) {
+      stat.addCount += 1;
+      stat.countHours += assignment.calculatedHours;
+    } else {
+      stat[`${assignment.shiftType}Count`] += 1;
+      stat.countHours += assignment.calculatedHours - 1;
+    }
   }
-  for (const stat of stats) stat.countHours = stat.totalHours - stat.workDays;
   return stats.filter(
     (stat) =>
       stat.workDays > 0 ||
@@ -101,15 +107,15 @@ export const createHistoryFromExcelExport = async ({
     neonSql`
       insert into schedule_assignments (
         id, workspace_id, schedule_id, employee_id, employee_name_snapshot, work_date,
-        shift_type, start_time, end_time, calculated_hours
+        shift_type, start_time, end_time, calculated_hours, is_add
       )
       select
         item.id::uuid, ${workspaceId}, ${scheduleId}, item.employee_id, item.employee_name,
         item.work_date::date, item.shift_type::shift_type,
-        item.start_time::time, item.end_time::time, item.calculated_hours::numeric
+        item.start_time::time, item.end_time::time, item.calculated_hours::numeric, item.is_add
       from jsonb_to_recordset(${JSON.stringify(assignmentRows)}::jsonb) as item(
         id text, employee_id text, employee_name text, work_date text,
-        shift_type text, start_time text, end_time text, calculated_hours numeric
+        shift_type text, start_time text, end_time text, calculated_hours numeric, is_add boolean
       )
       where exists (select 1 from schedules where id = ${scheduleId})
     `,
@@ -212,6 +218,7 @@ export const getHistoryDetail = async (
     startTime: assignment.startTime.slice(0, 5),
     endTime: assignment.endTime.slice(0, 5),
     calculatedHours: Number(assignment.calculatedHours),
+    isAdd: assignment.isAdd,
   }));
 
   return {

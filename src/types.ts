@@ -65,7 +65,10 @@ export type SpecialSettings = {
 export type ShiftAssignment = {
   employeeId: string;
   shiftType: ShiftType;
+  addTime?: AdditionalShiftTime;
 };
+
+export type AdditionalShiftTime = "15:00-21:00" | "16:00-22:00";
 
 export type WeeklySchedule = Record<Day, ShiftAssignment[]>;
 
@@ -104,5 +107,6 @@ export type EmployeeStats = {
   workDays: number;
   earlyCount: number;
   midCount: number;
+  addCount: number;
   lateCount: number;
 };

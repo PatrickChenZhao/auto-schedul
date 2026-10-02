@@ -30,7 +30,7 @@ describe("database row mappings", () => {
       employee_id: patrick.id,
       day: "Monday",
       available: true,
-      start_time: "09:45",
+      start_time: "09:30",
       end_time: "23:00",
     });
     expect(rows.coworkerRows).toEqual([
@@ -78,10 +78,36 @@ describe("database row mappings", () => {
         employee_name: employee.name,
         work_date: "2026-08-10",
         shift_type: "early",
-        start_time: "09:45",
-        end_time: "19:45",
+        start_time: "09:30",
+        end_time: "19:30",
         calculated_hours: 10,
+        is_add: false,
       },
     ]);
+  });
+
+  it("maps ADD shifts with their selected six-hour time and marker", () => {
+    const state = createDefaultState();
+    const employee = state.employees[0];
+    state.schedule.Monday = [{
+      employeeId: employee.id,
+      shiftType: "mid",
+      addTime: "16:00-22:00",
+    }];
+
+    const [row] = buildHistoryAssignmentDatabaseRows({
+      weekStart: "2026-08-10",
+      schedule: state.schedule,
+      settings: state,
+      createId: () => "00000000-0000-4000-8000-000000000002",
+    });
+
+    expect(row).toMatchObject({
+      shift_type: "mid",
+      start_time: "16:00",
+      end_time: "22:00",
+      calculated_hours: 6,
+      is_add: true,
+    });
   });
 });

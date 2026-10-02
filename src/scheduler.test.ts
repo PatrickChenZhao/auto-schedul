@@ -4,6 +4,7 @@ import {
   autoCompleteScheduleFrom,
   deleteManualShift,
   generateWeeklyScheduleOptions,
+  hasExcludedSameDayPair,
   internalSchedulerFeatureFlags,
   upsertManualShift,
 } from "./scheduler";
@@ -98,6 +99,20 @@ describe("scheduler characterization", () => {
       { employeeId: "emp-patrick", shiftType: "late" },
     ]);
     expect(deleteManualShift(replaced, "Tuesday", "emp-patrick").Tuesday).toEqual([]);
+
+    const addShift = {
+      employeeId: "emp-patrick",
+      shiftType: "mid" as const,
+      addTime: "15:00-21:00" as const,
+    };
+    const regularAfterAdd = upsertManualShift(
+      { ...initial, Tuesday: [addShift] },
+      "Tuesday",
+      { employeeId: "emp-patrick", shiftType: "early" },
+    );
+    expect(regularAfterAdd.Tuesday).toEqual([
+      { employeeId: "emp-patrick", shiftType: "early" },
+    ]);
   });
 });
 
@@ -136,7 +151,7 @@ describe("internal named-employee soft constraint", () => {
     state.employees.forEach((employee) => {
       state.availability[employee.id].Monday = {
         available: true,
-        start: "09:45",
+        start: "09:30",
         end: "23:00",
       };
     });
@@ -181,18 +196,18 @@ describe("internal named-employee soft constraint", () => {
     (["Tuesday", "Wednesday", "Thursday"] as const).forEach((day) => {
       state.availability[sunFeiyu.id][day] = {
         available: true,
-        start: "09:45",
+        start: "09:30",
         end: "23:00",
       };
       state.availability[otherEmployee.id][day] = {
         available: true,
-        start: "09:45",
+        start: "09:30",
         end: "23:00",
       };
     });
     state.availability[zhaoChen.id].Thursday = {
       available: true,
-      start: "09:45",
+      start: "09:30",
       end: "23:00",
     };
     state.schedule = upsertManualShift(createEmptySchedule(), "Monday", {
@@ -245,12 +260,12 @@ describe("internal named-employee soft constraint", () => {
     state.shiftDemand.Tuesday.early = 1;
     state.availability[sunFeiyu.id].Tuesday = {
       available: true,
-      start: "09:45",
+      start: "09:30",
       end: "23:00",
     };
     state.availability[otherEmployee.id].Tuesday = {
       available: true,
-      start: "09:45",
+      start: "09:30",
       end: "23:00",
     };
     state.schedule = upsertManualShift(createEmptySchedule(), "Monday", {
@@ -281,5 +296,80 @@ describe("internal named-employee soft constraint", () => {
     } finally {
       internalSchedulerFeatureFlags.preferZhaoChenAndSunFeiyuSameDay = true;
     }
+  });
+});
+
+describe("赵宸 and 徐嘉程 same-day option exclusion", () => {
+  const createExcludedPairState = () => {
+    const state = createDefaultState();
+    const [zhaoChen, xuJiacheng, otherEmployee] = state.employees;
+
+    zhaoChen.name = "赵宸";
+    xuJiacheng.name = "徐嘉程";
+    otherEmployee.name = "A";
+    state.employees = [zhaoChen, xuJiacheng, otherEmployee];
+
+    state.employees.forEach((employee) => {
+      state.preferences[employee.id] = {
+        shiftPreference: "any",
+        refuseLateShift: false,
+        minDays: 0,
+        maxDays: 7,
+        coworkers: [],
+      };
+    });
+
+    days.forEach((day) => {
+      shiftTypes.forEach((shiftType) => {
+        state.shiftDemand[day][shiftType] = 0;
+      });
+    });
+    state.shiftDemand.Monday.early = 1;
+    state.shiftDemand.Monday.mid = 1;
+
+    return { state, zhaoChen, xuJiacheng };
+  };
+
+  it("removes every generated option where the named employees share a day", () => {
+    const { state, zhaoChen, xuJiacheng } = createExcludedPairState();
+
+    const options = generateWeeklyScheduleOptions(state, 5);
+
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach((option) => {
+      expect(
+        days.some(
+          (day) =>
+            option.schedule[day].some(
+              (assignment) => assignment.employeeId === zhaoChen.id,
+            ) &&
+            option.schedule[day].some(
+              (assignment) => assignment.employeeId === xuJiacheng.id,
+            ),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  it("returns no option when every completed schedule contains the excluded pair", () => {
+    const { state, zhaoChen, xuJiacheng } = createExcludedPairState();
+    state.employees = [zhaoChen, xuJiacheng];
+
+    expect(generateWeeklyScheduleOptions(state, 5)).toEqual([]);
+  });
+
+  it("also detects a same-day conflict introduced by an additional assignment", () => {
+    const { state, zhaoChen, xuJiacheng } = createExcludedPairState();
+    const schedule = createEmptySchedule();
+    schedule.Monday = [
+      { employeeId: zhaoChen.id, shiftType: "early" },
+      {
+        employeeId: xuJiacheng.id,
+        shiftType: "mid",
+        addTime: "15:00-21:00",
+      },
+    ];
+
+    expect(hasExcludedSameDayPair(state, schedule)).toBe(true);
   });
 });

@@ -200,6 +200,7 @@ export const scheduleAssignments = pgTable(
     startTime: time("start_time", { precision: 0 }).notNull(),
     endTime: time("end_time", { precision: 0 }).notNull(),
     calculatedHours: numeric("calculated_hours", { precision: 6, scale: 2, mode: "number" }).notNull(),
+    isAdd: boolean("is_add").notNull().default(false),
   },
   (table) => [
     uniqueIndex("schedule_assignments_schedule_employee_date_uidx").on(

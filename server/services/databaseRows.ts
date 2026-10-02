@@ -1,6 +1,7 @@
 import type { AppSettings, WeeklySchedule } from "../../src/types.js";
 import { days } from "../../src/types.js";
 import { getHoursBetween } from "../../src/time.js";
+import { getAssignmentTemplate } from "../../src/data.js";
 
 export const addUtcDays = (isoDate: string, daysToAdd: number) => {
   const date = new Date(`${isoDate}T00:00:00.000Z`);
@@ -73,7 +74,7 @@ export const buildHistoryAssignmentDatabaseRows = ({
     schedule[day]
       .filter((assignment) => activeEmployeeIds.has(assignment.employeeId))
       .map((assignment) => {
-        const template = settings.shiftTemplates[day][assignment.shiftType];
+        const template = getAssignmentTemplate(day, assignment, settings.shiftTemplates);
         return {
           id: createId(),
           employee_id: assignment.employeeId,
@@ -83,6 +84,7 @@ export const buildHistoryAssignmentDatabaseRows = ({
           start_time: template.start,
           end_time: template.end,
           calculated_hours: getHoursBetween(template.start, template.end),
+          is_add: Boolean(assignment.addTime),
         };
       }),
   );

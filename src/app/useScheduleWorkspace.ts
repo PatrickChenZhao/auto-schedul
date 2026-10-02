@@ -4,6 +4,7 @@ import {
   autoCompleteScheduleFrom,
   deleteManualShift,
   generateWeeklyScheduleOptions,
+  hasExcludedSameDayPair,
   upsertManualShift,
 } from "../scheduler";
 import {
@@ -29,6 +30,33 @@ export const useScheduleWorkspace = (
     setSelectedScheduleOptionId("");
   };
 
+  const additionalAssignments = (schedule: AppState["schedule"]) =>
+    Object.fromEntries(
+      Object.entries(schedule).map(([day, assignments]) => [
+        day,
+        assignments.filter((assignment) => assignment.addTime),
+      ]),
+    ) as AppState["schedule"];
+
+  const regularAssignments = (schedule: AppState["schedule"]) =>
+    Object.fromEntries(
+      Object.entries(schedule).map(([day, assignments]) => [
+        day,
+        assignments.filter((assignment) => !assignment.addTime),
+      ]),
+    ) as AppState["schedule"];
+
+  const mergeAdditionalAssignments = (
+    schedule: AppState["schedule"],
+    additions: AppState["schedule"],
+  ) =>
+    Object.fromEntries(
+      Object.entries(schedule).map(([day, assignments]) => [
+        day,
+        [...assignments, ...additions[day as Day]],
+      ]),
+    ) as AppState["schedule"];
+
   const updateState = (recipe: (current: AppState) => AppState) => {
     clearScheduleOptions();
     setState((current) => recipe(current));
@@ -40,7 +68,21 @@ export const useScheduleWorkspace = (
   };
 
   const runAutoSchedule = () => {
-    const options = generateWeeklyScheduleOptions(toSchedulingInput(state), 5);
+    const additions = additionalAssignments(state.schedule);
+    const schedulingInput = toSchedulingInput(state);
+    const options = generateWeeklyScheduleOptions(schedulingInput, 5)
+      .map((option) => ({
+        ...option,
+        schedule: mergeAdditionalAssignments(option.schedule, additions),
+      }))
+      .filter(
+        (option) => !hasExcludedSameDayPair(schedulingInput, option.schedule),
+      )
+      .map((option, index) => ({
+        ...option,
+        id: `schedule-option-${index + 1}`,
+        label: `方案 ${index + 1}`,
+      }));
     const bestOption = options[0];
     setScheduleOptions(options);
     setSelectedScheduleOptionId(bestOption?.id ?? "");
@@ -65,9 +107,13 @@ export const useScheduleWorkspace = (
     clearScheduleOptions();
     const result = autoCompleteScheduleFrom(
       toSchedulingInput(state),
-      state.schedule,
+      regularAssignments(state.schedule),
     );
-    setState((current) => ({ ...current, schedule: result.schedule }));
+    const additions = additionalAssignments(state.schedule);
+    setState((current) => ({
+      ...current,
+      schedule: mergeAdditionalAssignments(result.schedule, additions),
+    }));
     setWarnings(result.warnings);
   };
 
@@ -93,11 +139,44 @@ export const useScheduleWorkspace = (
     shiftType: ShiftType,
   ) => upsertManualAssignment(day, { ...assignment, shiftType });
 
+  const addAdditionalAssignment = (day: Day, assignment: ShiftAssignment) => {
+    clearScheduleOptions();
+    setState((current) => {
+      if (
+        current.schedule[day].some(
+          (item) => item.employeeId === assignment.employeeId,
+        )
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        schedule: {
+          ...current.schedule,
+          [day]: [...current.schedule[day], assignment],
+        },
+      };
+    });
+  };
+
   const deleteManualAssignment = (day: Day, employeeId: string) => {
     clearScheduleOptions();
     setState((current) => ({
       ...current,
       schedule: deleteManualShift(current.schedule, day, employeeId),
+    }));
+  };
+
+  const deleteAdditionalAssignment = (day: Day, employeeId: string) => {
+    clearScheduleOptions();
+    setState((current) => ({
+      ...current,
+      schedule: {
+        ...current.schedule,
+        [day]: current.schedule[day].filter(
+          (assignment) => assignment.employeeId !== employeeId || !assignment.addTime,
+        ),
+      },
     }));
   };
 
@@ -114,6 +193,8 @@ export const useScheduleWorkspace = (
     startManualSchedule,
     upsertManualAssignment,
     changeManualAssignmentShift,
+    addAdditionalAssignment,
     deleteManualAssignment,
+    deleteAdditionalAssignment,
   };
 };

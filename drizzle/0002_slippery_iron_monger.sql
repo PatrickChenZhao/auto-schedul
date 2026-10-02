@@ -1,0 +1,1 @@
+ALTER TABLE "schedule_assignments" ADD COLUMN "is_add" boolean DEFAULT false NOT NULL;

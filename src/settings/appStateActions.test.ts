@@ -21,7 +21,7 @@ describe("app state settings actions", () => {
     expect(state.employees[state.employees.length - 1]).toEqual(employee);
     expect(state.availability[employee.id].Monday).toEqual({
       available: true,
-      start: "09:45",
+      start: "09:30",
       end: "23:00",
     });
     expect(state.preferences[employee.id]).toEqual({
@@ -48,7 +48,7 @@ describe("app state settings actions", () => {
     expect(fullTimeAgain.preferences["emp-patrick"].maxDays).toBe(3);
     expect(unavailable.availability["emp-patrick"].Monday).toEqual({
       available: false,
-      start: "09:45",
+      start: "09:30",
       end: "23:00",
     });
   });

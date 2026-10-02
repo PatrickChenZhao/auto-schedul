@@ -31,7 +31,9 @@ import { useScheduleWorkspace } from "./app/useScheduleWorkspace";
 import { useCloudWorkspace } from "./cloud/useCloudWorkspace";
 import { completeOfficialExcelExport } from "./cloud/officialExcelExport";
 import {
+  additionalShiftTimes,
   defaultShiftTemplates,
+  getAssignmentTemplate,
   getShiftTemplate,
   shiftColors,
   shiftLabels,
@@ -115,6 +117,13 @@ const getEmployeeName = (state: AppState, employeeId: string) =>
 
 const shiftDisplayName = (shiftType: ShiftType) => shiftLabels[shiftType];
 
+const getAssignmentDisplayRank = (assignment: ShiftAssignment) => {
+  if (assignment.addTime) return 2;
+  if (assignment.shiftType === "early") return 0;
+  if (assignment.shiftType === "mid") return 1;
+  return 3;
+};
+
 const getWeekMonday = (date = new Date()) => {
   const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const daysSinceMonday = (monday.getDay() + 6) % 7;
@@ -162,6 +171,7 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
   const [excelExportModalOpen, setExcelExportModalOpen] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addAdditionalModalOpen, setAddAdditionalModalOpen] = useState(false);
   const [editAssignment, setEditAssignment] = useState<ShiftAssignment | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(
     state.employees[0]?.id ?? "",
@@ -180,7 +190,9 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
     startManualSchedule,
     upsertManualAssignment,
     changeManualAssignmentShift,
+    addAdditionalAssignment,
     deleteManualAssignment,
+    deleteAdditionalAssignment,
   } = useScheduleWorkspace(state, setState);
   const cloud = useCloudWorkspace({ auth: cloudAuth, state, setState });
 
@@ -373,6 +385,7 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
             selectedScheduleOptionId={selectedScheduleOptionId}
             onSelectScheduleOption={selectScheduleOption}
             openAddModal={() => setAddModalOpen(true)}
+            openAddAdditionalModal={() => setAddAdditionalModalOpen(true)}
             openEditModal={setEditAssignment}
             onAutoComplete={autoCompleteCurrentSchedule}
             startManualSchedule={startManualSchedule}
@@ -458,6 +471,18 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
         />
       )}
 
+      {addAdditionalModalOpen && (
+        <AddAdditionalShiftModal
+          state={state}
+          day={selectedDay}
+          onClose={() => setAddAdditionalModalOpen(false)}
+          onConfirm={(assignment) => {
+            addAdditionalAssignment(selectedDay, assignment);
+            setAddAdditionalModalOpen(false);
+          }}
+        />
+      )}
+
       {editAssignment && (
         <EditShiftModal
           assignment={editAssignment}
@@ -472,7 +497,11 @@ function App({ cloudAuth }: { cloudAuth?: CloudAuthState }) {
             setEditAssignment(null);
           }}
           onDelete={() => {
-            deleteManualAssignment(selectedDay, editAssignment.employeeId);
+            if (editAssignment.addTime) {
+              deleteAdditionalAssignment(selectedDay, editAssignment.employeeId);
+            } else {
+              deleteManualAssignment(selectedDay, editAssignment.employeeId);
+            }
             setEditAssignment(null);
           }}
         />
@@ -517,6 +546,7 @@ function SchedulePage({
   selectedScheduleOptionId,
   onSelectScheduleOption,
   openAddModal,
+  openAddAdditionalModal,
   openEditModal,
   onAutoComplete,
   startManualSchedule,
@@ -532,6 +562,7 @@ function SchedulePage({
   selectedScheduleOptionId: string;
   onSelectScheduleOption: (option: ScheduleOption) => void;
   openAddModal: () => void;
+  openAddAdditionalModal: () => void;
   openEditModal: (assignment: ShiftAssignment) => void;
   onAutoComplete: () => void;
   startManualSchedule: () => void;
@@ -543,8 +574,8 @@ function SchedulePage({
   const assignments = state.schedule[selectedDay].filter((assignment) =>
     state.employees.some((employee) => employee.id === assignment.employeeId),
   ).sort((left, right) => {
-    const leftRank = shiftTypes.indexOf(left.shiftType);
-    const rightRank = shiftTypes.indexOf(right.shiftType);
+    const leftRank = getAssignmentDisplayRank(left);
+    const rightRank = getAssignmentDisplayRank(right);
     if (leftRank !== rightRank) return leftRank - rightRank;
     return getEmployeeName(state, left.employeeId).localeCompare(
       getEmployeeName(state, right.employeeId),
@@ -653,9 +684,9 @@ function SchedulePage({
             <div className="empty-state">No shifts scheduled for {selectedDay}.</div>
           ) : (
             assignments.map((assignment) => {
-              const template = getShiftTemplate(
+              const template = getAssignmentTemplate(
                 selectedDay,
-                assignment.shiftType,
+                assignment,
                 state.shiftTemplates,
               );
               const left =
@@ -667,10 +698,13 @@ function SchedulePage({
                 100;
 
               return (
-                <div className="schedule-row" key={assignment.employeeId}>
+                <div
+                  className="schedule-row"
+                  key={`${assignment.employeeId}-${assignment.addTime ?? assignment.shiftType}`}
+                >
                   <div className="employee-column">
                     {getEmployeeName(state, assignment.employeeId)}
-                    <span>{shiftDisplayName(assignment.shiftType)}</span>
+                    <span>{assignment.addTime ? "ADD" : shiftDisplayName(assignment.shiftType)}</span>
                   </div>
                   <div className="timeline-track">
                     <div className="track-lines">
@@ -683,11 +717,13 @@ function SchedulePage({
                       aria-label={`${getEmployeeName(
                         state,
                         assignment.employeeId,
-                      )} ${shiftDisplayName(assignment.shiftType)}`}
+                      )} ${assignment.addTime ? "ADD" : shiftDisplayName(assignment.shiftType)}`}
                       style={{
                         left: `${left}%`,
                         width: `${width}%`,
-                        background: shiftColors[assignment.shiftType],
+                        background: assignment.addTime
+                          ? shiftColors.mid
+                          : shiftColors[assignment.shiftType],
                       }}
                       onClick={() => openEditModal(assignment)}
                     />
@@ -702,6 +738,10 @@ function SchedulePage({
           <button className="add-shift-button" onClick={openAddModal}>
             <Plus size={17} />
             Add Employee Shift
+          </button>
+          <button className="add-additional-shift-button" onClick={openAddAdditionalModal}>
+            <Plus size={17} />
+            添加中晚班
           </button>
           <button
             className="auto-complete-button"
@@ -747,6 +787,7 @@ function StatsTable({ stats }: { stats: ReturnType<typeof calculateEmployeeStats
               <th>Employee</th>
               <th>Early Count</th>
               <th>Mid Count</th>
+              <th>Add Count</th>
               <th>Late Count</th>
               <th>Work Days</th>
               <th>Total Hours</th>
@@ -759,6 +800,7 @@ function StatsTable({ stats }: { stats: ReturnType<typeof calculateEmployeeStats
                 <td>{stat.employeeName}</td>
                 <td>{stat.earlyCount}</td>
                 <td>{stat.midCount}</td>
+                <td>{stat.addCount}</td>
                 <td>{stat.lateCount}</td>
                 <td>{stat.workDays}</td>
                 <td>{formatNumber(stat.totalHours)}</td>
@@ -976,7 +1018,7 @@ function AvailabilityPage({
                 <input
                   type="time"
                   step="900"
-                  value={employeeAvailability[day]?.start ?? "09:45"}
+                  value={employeeAvailability[day]?.start ?? "09:30"}
                   disabled={!employeeAvailability[day]?.available}
                   onChange={(event) =>
                     updateState((current) =>
@@ -1181,6 +1223,7 @@ function ShiftDemandPage({
   state: AppState;
   updateState: (recipe: (current: AppState) => AppState) => void;
 }) {
+  const [globalEarlyTimeOpen, setGlobalEarlyTimeOpen] = useState(false);
   const [editingShiftTime, setEditingShiftTime] = useState<{
     day: Day;
     shiftType: ShiftType;
@@ -1209,7 +1252,20 @@ function ShiftDemandPage({
             <thead>
               <tr>
                 <th>Day</th>
-                <th>Early</th>
+                <th>
+                  <div className="demand-early-header">
+                    <span>Early</span>
+                    <button
+                      className="shift-time-button"
+                      type="button"
+                      aria-label="早班全局设置"
+                      title="早班全局设置"
+                      onClick={() => setGlobalEarlyTimeOpen(true)}
+                    >
+                      <Settings size={16} />
+                    </button>
+                  </div>
+                </th>
                 <th>Mid</th>
                 <th>Late</th>
               </tr>
@@ -1270,6 +1326,21 @@ function ShiftDemandPage({
           恢复默认值
         </button>
       </div>
+      {globalEarlyTimeOpen && (
+        <GlobalEarlyTimeModal
+          templates={state.shiftTemplates}
+          onClose={() => setGlobalEarlyTimeOpen(false)}
+          onConfirm={(weekday, weekend) => {
+            updateState((current) => days.reduce(
+              (next, day, index) => setShiftTemplateInState(
+                next, day, "early", { ...(index < 4 ? weekday : weekend) },
+              ),
+              current,
+            ));
+            setGlobalEarlyTimeOpen(false);
+          }}
+        />
+      )}
       {editingShiftTime && (
         <ShiftTimeModal
           day={editingShiftTime.day}
@@ -1290,6 +1361,74 @@ function ShiftDemandPage({
         />
       )}
     </section>
+  );
+}
+
+function GlobalEarlyTimeModal({
+  templates,
+  onClose,
+  onConfirm,
+}: {
+  templates: AppState["shiftTemplates"];
+  onClose: () => void;
+  onConfirm: (weekday: ShiftTemplate, weekend: ShiftTemplate) => void;
+}) {
+  const [weekday, setWeekday] = useState({ ...templates.Monday.early });
+  const [weekend, setWeekend] = useState({ ...templates.Friday.early });
+  const groups = [
+    { label: "周一到周四", template: weekday, setTemplate: setWeekday, groupDays: days.slice(0, 4) },
+    { label: "周五到周日", template: weekend, setTemplate: setWeekend, groupDays: days.slice(4) },
+  ];
+  const isValid = groups.every(({ template }) =>
+    timeToMinutes(template.start) < timeToMinutes(template.end),
+  );
+
+  return (
+    <Modal title="早班全局设置" onClose={onClose}>
+      <div className="modal-form">
+        <div className="shift-time-summary">
+          保存后将统一应用到对应日期的早班，之后仍可逐日调整。
+        </div>
+        {groups.map(({ label, template, setTemplate, groupDays }) => (
+          <fieldset className="early-time-group" key={label}>
+            <legend>{label}</legend>
+            {groupDays.some((day) =>
+              templates[day].early.start !== templates[groupDays[0]].early.start ||
+              templates[day].early.end !== templates[groupDays[0]].early.end,
+            ) && <p className="muted">当前时间不一致，以下以{groupDays.length === 4 ? "周一" : "周五"}为初始值。</p>}
+            <div className="two-column-form modal-time-grid">
+              <label>
+                开始时间
+                <input
+                  type="time"
+                  aria-label={`${label}开始时间`}
+                  value={template.start}
+                  onChange={(event) => setTemplate({ ...template, start: event.target.value })}
+                  onInput={(event) => setTemplate({ ...template, start: event.currentTarget.value })}
+                />
+              </label>
+              <label>
+                结束时间
+                <input
+                  type="time"
+                  aria-label={`${label}结束时间`}
+                  value={template.end}
+                  onChange={(event) => setTemplate({ ...template, end: event.target.value })}
+                  onInput={(event) => setTemplate({ ...template, end: event.currentTarget.value })}
+                />
+              </label>
+            </div>
+          </fieldset>
+        ))}
+        {!isValid && <div className="inline-warning">结束时间必须晚于开始时间。</div>}
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>取消</button>
+          <button className="primary-button" disabled={!isValid} onClick={() => onConfirm(weekday, weekend)}>
+            <Check size={17} />保存
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1638,7 +1777,9 @@ function AddShiftModal({
   const availableEmployees = state.employees.filter(
     (employee) =>
       employee.enabled &&
-      !state.schedule[day].some((assignment) => assignment.employeeId === employee.id),
+      !state.schedule[day].some(
+        (assignment) => assignment.employeeId === employee.id,
+      ),
   );
   const [employeeId, setEmployeeId] = useState(availableEmployees[0]?.id ?? "");
   const [shiftType, setShiftType] = useState<ShiftType>("early");
@@ -1695,6 +1836,94 @@ function AddShiftModal({
   );
 }
 
+function AddAdditionalShiftModal({
+  state,
+  day,
+  onClose,
+  onConfirm,
+}: {
+  state: AppState;
+  day: Day;
+  onClose: () => void;
+  onConfirm: (assignment: ShiftAssignment) => void;
+}) {
+  const getAvailableTimes = (employeeId: string) => {
+    const availability = state.availability[employeeId]?.[day];
+    if (!availability?.available) return [];
+    return additionalShiftTimes.filter(
+      ({ start, end }) =>
+        timeToMinutes(availability.start) <= timeToMinutes(start) &&
+        timeToMinutes(availability.end) >= timeToMinutes(end),
+    );
+  };
+  const availableEmployees = state.employees.filter(
+    (employee) =>
+      employee.enabled &&
+      getAvailableTimes(employee.id).length > 0 &&
+      !state.schedule[day].some(
+        (assignment) => assignment.employeeId === employee.id,
+      ),
+  );
+  const [employeeId, setEmployeeId] = useState(availableEmployees[0]?.id ?? "");
+  const availableTimes = getAvailableTimes(employeeId);
+  const [addTime, setAddTime] = useState(availableTimes[0]?.value ?? "15:00-21:00");
+
+  const selectEmployee = (nextEmployeeId: string) => {
+    setEmployeeId(nextEmployeeId);
+    setAddTime(getAvailableTimes(nextEmployeeId)[0]?.value ?? "15:00-21:00");
+  };
+
+  return (
+    <Modal title="添加中晚班" onClose={onClose}>
+      {availableEmployees.length === 0 ? (
+        <div className="empty-state compact">
+          当前日期没有 availability 覆盖 3-9pm 或 4-10pm 的可用员工。
+        </div>
+      ) : (
+        <div className="modal-form">
+          <label>
+            选择员工
+            <select value={employeeId} onChange={(event) => selectEmployee(event.target.value)}>
+              {availableEmployees.map((employee) => (
+                <option value={employee.id} key={employee.id}>
+                  {employee.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <fieldset className="additional-time-fieldset">
+            <legend>选择加班时间</legend>
+            <div className="additional-time-options">
+              {availableTimes.map((option) => (
+                <label key={option.value}>
+                  <input
+                    type="radio"
+                    name="additional-shift-time"
+                    value={option.value}
+                    checked={addTime === option.value}
+                    onChange={() => setAddTime(option.value)}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="modal-actions">
+            <button className="secondary-button" onClick={onClose}>取消</button>
+            <button
+              className="primary-button"
+              onClick={() => onConfirm({ employeeId, shiftType: "mid", addTime })}
+            >
+              <Check size={17} />
+              添加
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function EditShiftModal({
   assignment,
   employeeName,
@@ -1710,22 +1939,22 @@ function EditShiftModal({
 }) {
   return (
     <Modal title={`Change Shift: ${employeeName}`} onClose={onClose}>
-      <div className="shift-choice-list">
-        {shiftTypes.map((shiftType) => (
-          <button
-            key={shiftType}
-            className={assignment.shiftType === shiftType ? "selected" : ""}
-            onClick={() => onChangeShift(shiftType)}
-          >
-            <span
-              style={{
-                background: shiftColors[shiftType],
-              }}
-            />
-            {shiftLabels[shiftType]}
-          </button>
-        ))}
-      </div>
+      {assignment.addTime ? (
+        <div className="shift-time-summary">ADD · {assignment.addTime}</div>
+      ) : (
+        <div className="shift-choice-list">
+          {shiftTypes.map((shiftType) => (
+            <button
+              key={shiftType}
+              className={assignment.shiftType === shiftType ? "selected" : ""}
+              onClick={() => onChangeShift(shiftType)}
+            >
+              <span style={{ background: shiftColors[shiftType] }} />
+              {shiftLabels[shiftType]}
+            </button>
+          ))}
+        </div>
+      )}
       <button className="delete-button" onClick={onDelete}>
         <Trash2 size={17} />
         Delete Shift

@@ -41,7 +41,21 @@ export const normalizeAppState = (value: unknown): AppState => {
   });
 
   days.forEach((day) => {
-    schedule[day] = Array.isArray(schedule[day]) ? schedule[day] : [];
+    schedule[day] = Array.isArray(schedule[day])
+      ? schedule[day].flatMap((assignment) => {
+          if (!assignment || !shiftTypes.includes(assignment.shiftType)) return [];
+          const addTime = ["15:00-21:00", "16:00-22:00"].includes(
+            String(assignment.addTime),
+          )
+            ? assignment.addTime
+            : undefined;
+          return [{
+            employeeId: String(assignment.employeeId),
+            shiftType: assignment.shiftType,
+            ...(addTime ? { addTime } : {}),
+          }];
+        })
+      : [];
     shiftDemand[day] = shiftDemand[day] ?? defaults.shiftDemand[day];
     shiftTypes.forEach((shiftType) => {
       shiftDemand[day][shiftType] = Number.isFinite(shiftDemand[day][shiftType])

@@ -33,6 +33,23 @@ export const shiftColors: Record<ShiftType, string> = {
   late: "#be6adf",
 };
 
+export const additionalShiftTimes = [
+  { value: "15:00-21:00", label: "3-9pm", start: "15:00", end: "21:00" },
+  { value: "16:00-22:00", label: "4-10pm", start: "16:00", end: "22:00" },
+] as const;
+
+export const getAssignmentTemplate = (
+  day: Day,
+  assignment: import("./types").ShiftAssignment,
+  shiftTemplates: ShiftTemplateMap = defaultShiftTemplates,
+) => {
+  if (assignment.addTime) {
+    const option = additionalShiftTimes.find(({ value }) => value === assignment.addTime);
+    if (option) return { start: option.start, end: option.end };
+  }
+  return getShiftTemplate(day, assignment.shiftType, shiftTemplates);
+};
+
 export const defaultEmployees: Employee[] = [
   { id: "emp-patrick", name: "Patrick", type: "full-time", enabled: true },
   { id: "emp-tom", name: "Tom", type: "full-time", enabled: true },
@@ -42,7 +59,7 @@ export const defaultEmployees: Employee[] = [
 
 export const defaultAvailabilityEntry: AvailabilityEntry = {
   available: true,
-  start: "09:45",
+  start: "09:30",
   end: "23:00",
 };
 
@@ -92,7 +109,7 @@ export const defaultShiftDemand: ShiftDemand = days.reduce((demand, day) => {
 export const defaultShiftTemplates: ShiftTemplateMap = days.reduce((templates, day) => {
   const isLongWeekendDay = day === "Friday" || day === "Saturday" || day === "Sunday";
   templates[day] = {
-    early: { start: "09:45", end: isLongWeekendDay ? "18:45" : "19:45" },
+    early: { start: "09:30", end: isLongWeekendDay ? "18:30" : "19:30" },
     mid: { start: "11:00", end: isLongWeekendDay ? "20:00" : "21:00" },
     late: { start: "13:00", end: "23:00" },
   };

@@ -24,4 +24,17 @@ describe("History export request", () => {
     const { idempotencyKey: _unused, ...request } = validRequest();
     expect(() => createHistoryRequestSchema.parse(request)).toThrow();
   });
+
+  it("accepts an ADD shift time", () => {
+    const request = validRequest();
+    request.schedule.Monday.push({
+      employeeId: request.settingsSnapshot.employees[0].id,
+      shiftType: "mid",
+      addTime: "15:00-21:00",
+    });
+
+    expect(createHistoryRequestSchema.parse(request).schedule.Monday[0].addTime).toBe(
+      "15:00-21:00",
+    );
+  });
 });

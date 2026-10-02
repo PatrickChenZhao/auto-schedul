@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx-js-style";
-import { getShiftTemplate } from "./data";
+import { getAssignmentTemplate } from "./data";
 import { calculateEmployeeStats } from "./stats";
 import { getHoursBetween, timeToMinutes } from "./time";
 import { AppState, Day, ShiftType, days } from "./types";
@@ -263,8 +263,8 @@ const buildScheduleSheet = (
   const sortedAssignments = [...state.schedule[day]]
     .filter((assignment) => employeeById.has(assignment.employeeId))
     .sort((first, second) => {
-      const firstTemplate = getShiftTemplate(day, first.shiftType, state.shiftTemplates);
-      const secondTemplate = getShiftTemplate(day, second.shiftType, state.shiftTemplates);
+      const firstTemplate = getAssignmentTemplate(day, first, state.shiftTemplates);
+      const secondTemplate = getAssignmentTemplate(day, second, state.shiftTemplates);
       return (
         timeToMinutes(firstTemplate.start) - timeToMinutes(secondTemplate.start) ||
         (employeeById.get(first.employeeId) ?? "").localeCompare(
@@ -281,14 +281,14 @@ const buildScheduleSheet = (
     const assignment = sortedAssignments[rowOffset];
     if (!assignment) continue;
 
-    const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
+    const template = getAssignmentTemplate(day, assignment, state.shiftTemplates);
     setCell(worksheet, rowIndex, 0, employeeById.get(assignment.employeeId) ?? "", baseStyle);
     setCell(worksheet, rowIndex, 1, formatShiftTime(template.start, template.end), baseStyle);
     setCell(
       worksheet,
       rowIndex,
       29,
-      calculateCountHours(template.start, template.end),
+      assignment.addTime ? 6 : calculateCountHours(template.start, template.end),
       baseStyle,
     );
 
@@ -347,11 +347,11 @@ const buildGeneralWorkbook = (state: AppState, weekStartDate: Date) => {
     const rows = state.schedule[day]
       .filter((assignment) => employeeById.has(assignment.employeeId))
       .map((assignment) => {
-        const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
+        const template = getAssignmentTemplate(day, assignment, state.shiftTemplates);
         return [
           formatFullDate(date),
           employeeById.get(assignment.employeeId) ?? "Unknown",
-          `${generalShiftLabels[assignment.shiftType]} ${template.start}-${template.end}`,
+          `${assignment.addTime ? "ADD" : generalShiftLabels[assignment.shiftType]} ${template.start}-${template.end}`,
         ];
       });
 
@@ -367,6 +367,7 @@ const buildGeneralWorkbook = (state: AppState, weekStartDate: Date) => {
     "Work Days": stat.workDays,
     "Early Count": stat.earlyCount,
     "Mid Count": stat.midCount,
+    "ADD Count": stat.addCount,
     "Late Count": stat.lateCount,
   }));
 

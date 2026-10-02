@@ -87,6 +87,7 @@ export const appSettingsSchema = z
 const assignmentSchema = z.object({
   employeeId: z.string().min(1).max(160),
   shiftType: shiftTypeSchema,
+  addTime: z.enum(["15:00-21:00", "16:00-22:00"]).optional(),
 });
 
 export const weeklyScheduleSchema = dayRecord(z.array(assignmentSchema).max(500));
@@ -147,6 +148,7 @@ export type HistoryAssignment = {
   startTime: string;
   endTime: string;
   calculatedHours: number;
+  isAdd: boolean;
 };
 
 export type HistoryDetail = HistoryListItem & {

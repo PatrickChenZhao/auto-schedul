@@ -1,4 +1,4 @@
-import { getShiftTemplate } from "./data";
+import { getAssignmentTemplate } from "./data";
 import { getHoursBetween } from "./time";
 import { AppState, EmployeeStats, days } from "./types";
 
@@ -11,6 +11,7 @@ export const calculateEmployeeStats = (state: AppState): EmployeeStats[] => {
     workDays: 0,
     earlyCount: 0,
     midCount: 0,
+    addCount: 0,
     lateCount: 0,
   }));
 
@@ -20,17 +21,20 @@ export const calculateEmployeeStats = (state: AppState): EmployeeStats[] => {
     state.schedule[day].forEach((assignment) => {
       const stat = statByEmployee.get(assignment.employeeId);
       if (!stat) return;
-      const template = getShiftTemplate(day, assignment.shiftType, state.shiftTemplates);
-      stat.totalHours += getHoursBetween(template.start, template.end);
+      const template = getAssignmentTemplate(day, assignment, state.shiftTemplates);
+      const hours = getHoursBetween(template.start, template.end);
+      stat.totalHours += hours;
       stat.workDays += 1;
-      if (assignment.shiftType === "early") stat.earlyCount += 1;
-      if (assignment.shiftType === "mid") stat.midCount += 1;
-      if (assignment.shiftType === "late") stat.lateCount += 1;
+      if (assignment.addTime) {
+        stat.addCount += 1;
+        stat.countHours += hours;
+      } else {
+        if (assignment.shiftType === "early") stat.earlyCount += 1;
+        if (assignment.shiftType === "mid") stat.midCount += 1;
+        if (assignment.shiftType === "late") stat.lateCount += 1;
+        stat.countHours += hours - 1;
+      }
     });
-  });
-
-  stats.forEach((stat) => {
-    stat.countHours = stat.totalHours - stat.workDays;
   });
 
   return stats.filter(

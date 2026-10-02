@@ -704,6 +704,50 @@ input[type="number"] {
   color: #12614c;
 }
 
+.add-additional-shift-button {
+  border: 1px solid #b8ccef;
+  background: #eef4ff;
+  color: #315fba;
+}
+
+.add-additional-shift-button:hover {
+  border-color: #7fa2df;
+  background: #e3edff;
+}
+
+.additional-time-fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+}
+
+.additional-time-fieldset legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.additional-time-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.additional-time-options label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.additional-time-options input {
+  width: auto;
+}
+
 .auto-complete-button {
   border: 1px solid #d7e1ee;
   background: #fff;
@@ -1303,4 +1347,27 @@ th {
     width: 100%;
     min-width: 0;
   }
+}
+
+.demand-early-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demand-early-header > span {
+  width: 76px;
+}
+
+.early-time-group {
+  margin: 0;
+  padding: 14px;
+  min-width: 0;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+}
+
+.early-time-group legend {
+  padding: 0 6px;
+  font-weight: 700;
 }
